@@ -14,7 +14,7 @@ struct BreadcrumbApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "main") {
             RootView()
                 .frame(minWidth: 960, minHeight: 640)
                 .preferredColorScheme(appearance.colorScheme)
@@ -23,6 +23,14 @@ struct BreadcrumbApp: App {
         }
         .modelContainer(container)
         .defaultSize(width: 1200, height: 820)
+
+        MenuBarExtra {
+            MenuBarContent()
+                .environment(tracker)
+        } label: {
+            Image(systemName: tracker.isPaused ? "pause.circle" : "point.topleft.down.to.point.bottomright.curvepath")
+                .accessibilityLabel(tracker.isPaused ? "Breadcrumb (paused)" : "Breadcrumb")
+        }
 
         Settings {
             SettingsView()
