@@ -14,7 +14,8 @@ enum DateRange: String, CaseIterable, Identifiable, Sendable {
         let future = now.addingTimeInterval(60)
         switch self {
         case .today:
-            return startOfToday..<max(future, startOfToday)
+            let tomorrow = calendar.date(byAdding: .day, value: 1, to: startOfToday) ?? future
+            return startOfToday..<min(future, tomorrow)
         case .yesterday:
             let start = calendar.date(byAdding: .day, value: -1, to: startOfToday) ?? startOfToday
             return start..<startOfToday

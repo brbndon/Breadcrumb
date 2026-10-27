@@ -22,6 +22,7 @@ targets:
         ENABLE_HARDENED_RUNTIME: YES
         CODE_SIGN_ENTITLEMENTS: Breadcrumb/Breadcrumb.entitlements
         CODE_SIGN_STYLE: Automatic
+        INFOPLIST_KEY_NSAppleEventsUsageDescription: Breadcrumb reads only the foreground website host in browsers you enable in Settings. Full URLs and titles are never stored.
   BreadcrumbTests:
     type: bundle.unit-test
     platform: macOS
@@ -32,3 +33,16 @@ targets:
       base:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: com.branalytic.BreadcrumbTests
+
+schemes:
+  Breadcrumb:
+    build:
+      targets:
+        Breadcrumb: all
+        BreadcrumbTests: [test]
+    test:
+      gatherCoverageData: true
+      environmentVariables:
+        BREADCRUMB_TESTING: "1"
+      targets:
+        - BreadcrumbTests

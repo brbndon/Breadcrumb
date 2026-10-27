@@ -14,7 +14,15 @@ struct JourneyView: View {
         } else {
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    ForEach(rows) { JourneyRowView(row: $0) }
+                    ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                        JourneyRowView(
+                            row: row,
+                            showTime: index == 0
+                                || !Calendar.current.isDate(
+                                    row.event.timestamp, equalTo: rows[index - 1].event.timestamp,
+                                    toGranularity: .minute)
+                        )
+                    }
                 }
                 .frame(maxWidth: 672)
                 .padding(.vertical, 16)
@@ -26,6 +34,7 @@ struct JourneyView: View {
 
 private struct JourneyRowView: View {
     let row: JourneyRow
+    let showTime: Bool
 
     private var stemHeight: CGFloat {
         guard let dwell = row.dwell else { return 12 }
@@ -35,7 +44,8 @@ private struct JourneyRowView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Text(row.event.timestamp, format: .dateTime.hour().minute())
+            Text(showTime ? row.event.timestamp.formatted(.dateTime.hour().minute()) : "")
+                .accessibilityLabel(row.event.timestamp.formatted(.dateTime.hour().minute()))
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .frame(width: 88, alignment: .trailing)
@@ -43,7 +53,11 @@ private struct JourneyRowView: View {
             VStack(spacing: 0) {
                 marker.frame(width: 32, height: 32)
                 Rectangle()
-                    .fill(LinearGradient(colors: [.secondary.opacity(0.5), .secondary.opacity(0.1)], startPoint: .top, endPoint: .bottom))
+                    .fill(
+                        LinearGradient(
+                            colors: [.secondary.opacity(0.5), .secondary.opacity(0.1)], startPoint: .top,
+                            endPoint: .bottom)
+                    )
                     .frame(width: 1, height: stemHeight)
             }
             VStack(alignment: .leading, spacing: 2) {
@@ -64,7 +78,7 @@ private struct JourneyRowView: View {
 
     @ViewBuilder private var marker: some View {
         if row.event.kind == .site {
-            Circle().fill(.pink.opacity(0.6)).frame(width: 12, height: 12)
+            Circle().fill(BreadcrumbPalette.rose).frame(width: 12, height: 12)
         } else if let icon = AppIcon.image(for: row.event.bundleID) {
             Image(nsImage: icon).resizable().accessibilityHidden(true)
         } else {
@@ -76,7 +90,8 @@ private struct JourneyRowView: View {
 enum AppIcon {
     static func image(for bundleID: String?) -> NSImage? {
         guard let bundleID,
-              let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return nil }
+            let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
+        else { return nil }
         return NSWorkspace.shared.icon(forFile: url.path)
     }
 }
