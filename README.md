@@ -22,6 +22,8 @@ For a repeatable manual menu smoke check, launch the signed executable with `BRE
 
 The unit-test scheme sets `BREADCRUMB_TESTING=1`: the app host uses in-memory storage, nonpersistent tracking preferences, and no live capture. `BREADCRUMB_DEMO=1` provides the same isolation for UI smoke checks. These flags do not enable browser capture. Normal launches use the persistent app store. No test should use or delete personal history.
 
+Settings → **Dock & App Switcher** offers **Hide from Dock when no windows are open** (off by default). When enabled, closing both Breadcrumb and Settings removes the app from the Dock and Command-Tab; its menu bar item and tracking remain available. Opening either window restores normal Dock presence. Minimized windows still count as open. This preference is saved locally; demo and test runs keep it in memory.
+
 ## Privacy and tracking
 
 Tracking starts only after first-run privacy setup. Breadcrumb keeps app name, bundle ID, timestamps, and optional website host locally. Nothing is uploaded. It never logs app names, hosts, URLs, or titles. Pause/resume is shared by Settings and the menu. Exclusions apply to new capture, including browser hosts; existing records are kept.

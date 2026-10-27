@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 @Observable
 final class AppRuntime {
     let preferences: TrackingPreferences
+    let presence: AppPresence
     private(set) var store: UsageStore?
     private(set) var tracker: FrontmostAppTracker?
     private(set) var storageError: String?
@@ -16,10 +17,12 @@ final class AppRuntime {
     private let openStore: () throws -> UsageStore
 
     init(
-        preferences: TrackingPreferences = TrackingPreferences(), automaticCapture: Bool = true,
+        preferences: TrackingPreferences = TrackingPreferences(),
+        presence: AppPresence = AppPresence(), automaticCapture: Bool = true,
         openStore: @escaping () throws -> UsageStore = { try UsageStore.open() }
     ) {
         self.preferences = preferences
+        self.presence = presence
         self.automaticCapture = automaticCapture
         self.openStore = openStore
         load()

@@ -13,7 +13,8 @@ struct BreadcrumbApp: App {
         let preferences = TrackingPreferences(defaults: isolated ? nil : .standard)
         _runtime = State(
             initialValue: AppRuntime(
-                preferences: preferences, automaticCapture: !isolated,
+                preferences: preferences, presence: AppPresence(defaults: isolated ? nil : .standard),
+                automaticCapture: !isolated,
                 openStore: { try UsageStore.open(inMemory: isolated) }))
     }
 
@@ -29,6 +30,7 @@ struct BreadcrumbApp: App {
             .frame(minWidth: 960, minHeight: 640)
             .preferredColorScheme(appearance.colorScheme)
             .environment(runtime)
+            .background(AppPresenceWindow(presence: runtime.presence))
             .task {
                 delegate.runtime = runtime
                 runtime.start()
@@ -50,6 +52,7 @@ struct BreadcrumbApp: App {
             SettingsView()
                 .preferredColorScheme(appearance.colorScheme)
                 .environment(runtime)
+                .background(AppPresenceWindow(presence: runtime.presence))
         }
     }
 }

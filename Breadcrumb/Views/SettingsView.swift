@@ -9,10 +9,19 @@ struct SettingsView: View {
 
     var body: some View {
         @Bindable var preferences = runtime.preferences
+        @Bindable var presence = runtime.presence
         Form {
             Picker("Appearance", selection: $appearance) {
                 ForEach(AppearanceSetting.allCases) { Text($0.rawValue).tag($0) }
             }.pickerStyle(.segmented)
+
+            Section("Dock & App Switcher") {
+                Toggle("Hide from Dock when no windows are open", isOn: $presence.hideWhenNoWindows)
+                Text(
+                    "Breadcrumb stays in the menu bar. Opening Breadcrumb or Settings restores it to the Dock and Command-Tab. Minimized windows count as open."
+                )
+                .foregroundStyle(.secondary)
+            }
 
             Section("Tracking") {
                 Toggle("Pause tracking", isOn: $preferences.isPaused)
