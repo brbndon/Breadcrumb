@@ -141,3 +141,102 @@ extension HistoryExplorerTests {
         explorer.stop()
     }
 }
+
+extension HistoryExplorerTests {
+    @Test func revisionsDoNotApplyUnsubmittedCustomEdits() async {
+        let explorer = HistoryExplorer(
+            page: { _, _, _ in JourneyPage(rows: [], nextCursor: nil) }, report: { _ in Report() })
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        explorer.range = .custom
+        explorer.customStart = Calendar.current.date(byAdding: .day, value: -2, to: now)!
+        explorer.customEnd = Calendar.current.date(byAdding: .day, value: -1, to: now)!
+        explorer.refresh(now: now)
+        let applied = explorer.periods?.current
+        explorer.customStart = Calendar.current.date(byAdding: .day, value: -20, to: now)!
+        explorer.storeChanged(revision: 1, now: now)
+        #expect(explorer.periods?.current == applied)
+        explorer.stop()
+    }
+    @Test func invalidDraftDoesNotPreventRevisionFromInvalidatingOldQuery() async {
+        let gate = PageGate()
+        let explorer = HistoryExplorer(page: { _, _, _ in try await gate.read() }, report: { _ in Report() })
+        let now = Date.now
+        explorer.refresh(now: now)
+        await waitFor { gate.pending.count == 1 }
+        explorer.range = .custom
+        explorer.customStart = now
+        explorer.customEnd = Calendar.current.date(byAdding: .day, value: -1, to: now)!
+        explorer.refresh(now: now)
+        explorer.storeChanged(revision: 1, now: now)
+        await waitFor { gate.pending.count == 2 }
+        #expect(gate.pending.count == 2)
+        if gate.pending.count == 2 { gate.finish(1, rows: [row("New revision")]) }
+        gate.finish(0, rows: [row("Old revision")])
+        await waitFor { !explorer.isLoading }
+        #expect(explorer.rows.first?.event.displayName != "Old revision")
+        explorer.stop()
+    }
+    @Test func staleOlderPageCannotAppendAfterRevision() async {
+        let gate = PageGate()
+        let initial = row("First")
+        var reads = 0
+        let explorer = HistoryExplorer(
+            page: { _, _, _ in
+                reads += 1
+                if reads == 1 {
+                    return JourneyPage(
+                        rows: [initial],
+                        nextCursor: JourneyCursor(timestamp: initial.event.timestamp, id: initial.id))
+                }
+                return try await gate.read()
+            }, report: { _ in Report() })
+        explorer.refresh()
+        await waitFor { !explorer.rows.isEmpty }
+        explorer.loadOlder()
+        await waitFor { gate.pending.count == 1 }
+        explorer.storeChanged(revision: 1)
+        await waitFor { gate.pending.count == 2 }
+        gate.finish(1, rows: [row("Fresh")])
+        await waitFor { !explorer.isLoading }
+        gate.finish(0, rows: [row("Stale older")])
+        await Task.yield()
+        #expect(explorer.rows.map(\.event.displayName) == ["Fresh"])
+        explorer.stop()
+    }
+    @Test func pageAndReportErrorsRecoverWithoutLosingVisiblePage() async {
+        enum Failure: Error { case unavailable }
+        var pageFails = false
+        var reportFails = true
+        let first = row("First")
+        let older = row("Older")
+        let explorer = HistoryExplorer(
+            page: { _, cursor, _ in
+                if pageFails { throw Failure.unavailable }
+                return JourneyPage(
+                    rows: [cursor == nil ? first : older],
+                    nextCursor: cursor == nil
+                        ? JourneyCursor(timestamp: first.event.timestamp, id: first.id) : nil)
+            },
+            report: { _ in
+                if reportFails { throw Failure.unavailable }
+                return Report()
+            })
+        explorer.refresh()
+        await waitFor { !explorer.isLoading }
+        #expect(explorer.reportError != nil)
+        reportFails = false
+        explorer.updateReports()
+        #expect(explorer.reportError == nil)
+        pageFails = true
+        explorer.loadOlder()
+        await waitFor { !explorer.isLoading }
+        #expect(explorer.rows.count == 1)
+        #expect(explorer.journeyError != nil)
+        pageFails = false
+        explorer.retryJourney()
+        await waitFor { !explorer.isLoading }
+        #expect(explorer.rows.map(\.event.displayName) == ["First", "Older"])
+        #expect(explorer.nextCursor == nil)
+        explorer.stop()
+    }
+}

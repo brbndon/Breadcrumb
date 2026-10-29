@@ -22,6 +22,7 @@ final class HistoryExplorer {
     private(set) var reportError: String?
     private(set) var periodError: String?
     private(set) var nextCursor: JourneyCursor?
+    private var appliedSelection: (range: DateRange, start: Date, end: Date)?
     private var revision: Int?
     private var generation = 0
     private var pageTask: Task<Void, Never>?
@@ -48,6 +49,7 @@ final class HistoryExplorer {
         do {
             periods = try range.resolve(
                 now: now, calendar: calendar, customStart: customStart, customEnd: customEnd)
+            appliedSelection = (range, customStart, customEnd)
             periodError = nil
         } catch {
             periodError = error.localizedDescription
@@ -74,12 +76,28 @@ final class HistoryExplorer {
     func storeChanged(revision: Int, now: Date = .now) {
         guard self.revision != revision else { return }
         self.revision = revision
-        refresh(now: now)
+        refreshApplied(now: now, calendar: .current)
     }
 
     func dayChanged(now: Date, calendar: Calendar = .current) {
         guard let periods, !calendar.isDate(periods.asOf, inSameDayAs: now) else { return }
-        refresh(now: now, calendar: calendar)
+        refreshApplied(now: now, calendar: calendar)
+    }
+
+    private func refreshApplied(now: Date, calendar: Calendar) {
+        guard let selection = appliedSelection else {
+            refresh(now: now, calendar: calendar)
+            return
+        }
+        do {
+            periods = try selection.range.resolve(
+                now: now, calendar: calendar, customStart: selection.start, customEnd: selection.end)
+            updateReports()
+            reloadJourney()
+        } catch {
+            stop()
+            periodError = error.localizedDescription
+        }
     }
 
     func reloadJourney(debounce: Bool = false) {
