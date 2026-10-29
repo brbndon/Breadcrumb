@@ -14,6 +14,12 @@ struct RootView: View {
                     Button("Retry") { tracker.retry() }
                 }.padding(12)
             }
+            if let message = runtime.tracker?.activityMessage, runtime.preferences.hasConsent {
+                HStack {
+                    Text(message)
+                    Button("Retry Activity Check") { runtime.activityMonitor.sample() }
+                }.padding(12)
+            }
             if !runtime.preferences.hasConsent {
                 PrivacyIntroduction()
             } else {
@@ -74,7 +80,9 @@ private struct ExplorerContent: View {
                 JourneyView(explorer: explorer)
             }.frame(minWidth: 380, idealWidth: 550, maxHeight: .infinity)
             Group {
-                if let error = explorer.reportError {
+                if explorer.isReporting {
+                    ProgressView("Building report").padding()
+                } else if let error = explorer.reportError {
                     VStack {
                         Text(error)
                         Button("Retry Report") { explorer.updateReports() }

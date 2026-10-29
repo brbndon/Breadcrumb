@@ -240,3 +240,40 @@ extension HistoryExplorerTests {
         explorer.stop()
     }
 }
+
+@MainActor
+private final class ReportGate {
+    var pending: [CheckedContinuation<Report, any Error>] = []
+    func read() async throws -> Report { try await withCheckedThrowingContinuation { pending.append($0) } }
+    func finish(_ index: Int, name: String) {
+        pending[index].resume(
+            returning: Report(topApps: [
+                RankedItem(key: name, name: name, bundleID: name, visits: 1, total: 0)
+            ]))
+    }
+}
+
+extension HistoryExplorerTests {
+    @Test func staleComparisonCannotPublishAfterStoreRevision() async {
+        let gate = ReportGate()
+        let explorer = HistoryExplorer(
+            page: { _, _, _ in JourneyPage(rows: [], nextCursor: nil) }, report: { _ in Report() },
+            asyncReport: { _ in try await gate.read() })
+        explorer.comparisonEnabled = true
+        explorer.refresh()
+        await waitFor { gate.pending.count == 1 }
+        gate.finish(0, name: "Old current")
+        await waitFor { gate.pending.count == 2 }
+        explorer.storeChanged(revision: 1)
+        await waitFor { gate.pending.count == 3 }
+        gate.finish(2, name: "New current")
+        await waitFor { gate.pending.count == 4 }
+        gate.finish(3, name: "New previous")
+        await waitFor { !explorer.isReporting }
+        gate.finish(1, name: "Old previous")
+        await Task.yield()
+        #expect(explorer.report.topApps.first?.name == "New current")
+        #expect(explorer.previousReport?.topApps.first?.name == "New previous")
+        explorer.stop()
+    }
+}

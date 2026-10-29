@@ -18,6 +18,7 @@ final class HistoryExplorer {
     private(set) var report = Report()
     private(set) var previousReport: Report?
     private(set) var isLoading = false
+    private(set) var isReporting = false
     private(set) var journeyError: String?
     private(set) var reportError: String?
     private(set) var periodError: String?
@@ -26,23 +27,28 @@ final class HistoryExplorer {
     private var revision: Int?
     private var generation = 0
     private var pageTask: Task<Void, Never>?
+    private var reportTask: Task<Void, Never>?
+    private var reportGeneration = 0
     private let page: @MainActor (HistoryQuery, JourneyCursor?, Int) async throws -> JourneyPage
     private let buildReport: @MainActor (Range<Date>) throws -> Report
+    private let asyncReport: (@MainActor (Range<Date>) async throws -> Report)?
 
     init(
         page: @escaping @MainActor (HistoryQuery, JourneyCursor?, Int) async throws -> JourneyPage,
-        report: @escaping @MainActor (Range<Date>) throws -> Report
+        report: @escaping @MainActor (Range<Date>) throws -> Report,
+        asyncReport: (@MainActor (Range<Date>) async throws -> Report)? = nil
     ) {
         self.page = page
         self.buildReport = report
+        self.asyncReport = asyncReport
     }
 
     convenience init(store: UsageStore) {
         let service = HistoryQueryService(store: store)
         self.init(
             page: { query, cursor, limit in
-                try service.journeyPage(for: query, before: cursor, limit: limit)
-            }, report: { try store.report(in: $0) })
+                try await service.journeyPageAsync(for: query, before: cursor, limit: limit)
+            }, report: { try store.report(in: $0) }, asyncReport: { try await service.report(in: $0) })
     }
 
     func refresh(now: Date = .now, calendar: Calendar = .current) {
@@ -61,6 +67,38 @@ final class HistoryExplorer {
 
     func updateReports() {
         guard let periods else { return }
+        reportGeneration += 1
+        reportTask?.cancel()
+        if let asyncReport {
+            let token = reportGeneration
+            let compare = comparisonEnabled
+            isReporting = true
+            reportError = nil
+            reportTask = Task { [weak self] in
+                do {
+                    let current = try await asyncReport(periods.current)
+                    try Task.checkCancellation()
+                    let previous: Report?
+                    if compare, let interval = periods.previous {
+                        previous = try await asyncReport(interval)
+                    } else {
+                        previous = nil
+                    }
+                    guard let self, self.reportGeneration == token, !Task.isCancelled else { return }
+                    self.report = current
+                    self.previousReport = previous
+                    self.isReporting = false
+                } catch is CancellationError {
+                    return
+                } catch {
+                    guard let self, self.reportGeneration == token, !Task.isCancelled else { return }
+                    self.reportError = "Report unavailable. History has been kept."
+                    self.previousReport = nil
+                    self.isReporting = false
+                }
+            }
+            return
+        }
         do {
             let current = try buildReport(periods.current)
             let previous = try comparisonEnabled ? periods.previous.map(buildReport) : nil
@@ -131,6 +169,10 @@ final class HistoryExplorer {
         generation += 1
         pageTask?.cancel()
         pageTask = nil
+        reportGeneration += 1
+        reportTask?.cancel()
+        reportTask = nil
+        isReporting = false
         isLoading = false
     }
 

@@ -120,3 +120,13 @@ extension ReportBuilderTests {
             ReportBuilder.rankedItems(items, by: .estimatedTime).map(\.key) == ["app:c", "app:a", "app:b"])
     }
 }
+
+extension ReportBuilderTests {
+    @Test func emptyIntervalHasNoCarryInVisitOrEstimate() {
+        let report = ReportBuilder.build(
+            events: [event("A", at: 0), event("B", at: 120)],
+            in: base.addingTimeInterval(60)..<base.addingTimeInterval(60))
+        #expect(!report.hasRecordedHistory)
+        #expect(report.activeMinutes == 0)
+    }
+}
