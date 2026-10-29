@@ -33,8 +33,11 @@ struct ReportView: View {
                         "Recorded visit duration in the journey is uncapped and can include unattended time when idle pausing was disabled. Ongoing means its duration is unknown."
                     )
                 }.font(.caption)
-                Picker("Sort apps and sites by", selection: $explorer.sort) {
-                    ForEach(ReportSort.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Sort apps and sites by").font(.caption)
+                    Picker("Sort apps and sites by", selection: $explorer.sort) {
+                        ForEach(ReportSort.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }.labelsHidden()
                 }
                 section("Apps", report.topApps, kind: .apps, expanded: $explorer.showAllApps)
                 section("Sites", report.topSites, kind: .sites, expanded: $explorer.showAllSites)
