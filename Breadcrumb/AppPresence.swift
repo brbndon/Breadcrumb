@@ -36,6 +36,9 @@ final class AppPresence: NSObject {
             object: nil)
     }
 
+    /// Applies the Dock policy without a window event, e.g. after a launch that opens no window.
+    func refreshPolicy() { updatePolicy() }
+
     func register(_ window: NSWindow) {
         windows.add(window)
         openWindows.insert(ObjectIdentifier(window))

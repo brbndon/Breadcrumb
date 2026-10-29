@@ -10,6 +10,8 @@ final class HistoryExplorer {
     var filter = HistoryFilter()
     var sort: ReportSort = .visits
     private(set) var selectionRevision = 0
+    private(set) var selectedName: String?
+    private var reportAnchor: Date?
     var showAllApps = false
     var showAllSites = false
     var comparisonEnabled = false
@@ -51,6 +53,9 @@ final class HistoryExplorer {
             }, report: { try store.report(in: $0) }, asyncReport: { try await service.report(in: $0) })
     }
 
+    /// A refresh of the period already on screen keeps its report visible instead of blanking the pane.
+    var keepsReportVisible: Bool { reportAnchor != nil && reportAnchor == periods?.current.lowerBound }
+
     func refresh(now: Date = .now, calendar: Calendar = .current) {
         do {
             periods = try range.resolve(
@@ -87,6 +92,7 @@ final class HistoryExplorer {
                     guard let self, self.reportGeneration == token, !Task.isCancelled else { return }
                     self.report = current
                     self.previousReport = previous
+                    self.reportAnchor = periods.current.lowerBound
                     self.isReporting = false
                 } catch is CancellationError {
                     return
@@ -104,6 +110,7 @@ final class HistoryExplorer {
             let previous = try comparisonEnabled ? periods.previous.map(buildReport) : nil
             report = current
             previousReport = previous
+            reportAnchor = periods.current.lowerBound
             reportError = nil
         } catch {
             reportError = "Report unavailable. History has been kept."
@@ -156,12 +163,14 @@ final class HistoryExplorer {
 
     func select(_ item: RankedItem, kind: HistoryKindFilter) {
         filter = HistoryFilter(text: "", kind: kind, nodeKey: item.key)
+        selectedName = item.name
         selectionRevision += 1
         reloadJourney()
     }
 
     func clearFilters() {
         filter = HistoryFilter()
+        selectedName = nil
         reloadJourney()
     }
 

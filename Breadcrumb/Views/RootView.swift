@@ -80,7 +80,7 @@ private struct ExplorerContent: View {
                 JourneyView(explorer: explorer)
             }.frame(minWidth: 380, idealWidth: 550, maxHeight: .infinity)
             Group {
-                if explorer.isReporting {
+                if explorer.isReporting && !explorer.keepsReportVisible {
                     ProgressView("Building report").padding()
                 } else if let error = explorer.reportError {
                     VStack {
@@ -89,6 +89,10 @@ private struct ExplorerContent: View {
                     }.padding()
                 } else {
                     ReportView(explorer: explorer)
+                        .opacity(explorer.isReporting ? 0.6 : 1)
+                        .overlay(alignment: .topTrailing) {
+                            if explorer.isReporting { ProgressView().controlSize(.small).padding(8) }
+                        }
                 }
             }.frame(minWidth: 300, maxHeight: .infinity)
         }

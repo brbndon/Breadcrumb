@@ -65,6 +65,8 @@ final class AppRuntime {
                 requiresActivity: automaticCapture)
             preferences.onChange = { [weak self] in
                 guard let self else { return }
+                // A fresh sample first lets a newly enabled idle pause close at the last input time.
+                if self.activityMonitor.isRunning { self.activityMonitor.sample() }
                 self.tracker?.policyChanged(refresh: false)
                 self.reconcileActivity()
                 self.tracker?.refresh()
@@ -76,6 +78,17 @@ final class AppRuntime {
             tracker = nil
             storageError =
                 "Breadcrumb could not open its history. Your existing files have been kept. Check available disk space and folder access, then retry."
+        }
+    }
+
+    /// Starts services and decides whether launch shows the main window. A login launch with
+    /// consent stays in the menu bar, so the Dock policy is applied without waiting for a window event.
+    func finishLaunch(login: Bool) {
+        start()
+        if LaunchReason.shouldOpenWindow(login: login, hasConsent: preferences.hasConsent) {
+            requestInitialWindow = true
+        } else {
+            presence.refreshPolicy()
         }
     }
 

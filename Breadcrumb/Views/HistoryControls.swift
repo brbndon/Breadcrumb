@@ -24,7 +24,7 @@ struct HistoryControls: View {
                 }
             }
             if let node = explorer.filter.nodeKey {
-                Text("Selected: \(node)").font(.caption).textSelection(.enabled)
+                Text("Selected: \(explorer.selectedName ?? node)").font(.caption).textSelection(.enabled)
             }
         }.padding(12)
             .onChange(of: explorer.selectionRevision) { searchFocused = true }

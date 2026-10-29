@@ -77,11 +77,8 @@ final class BreadcrumbDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard let runtime else { return }
         let login = LaunchReason.isLogin(event: NSAppleEventManager.shared().currentAppleEvent)
-        runtime.start()
-        if LaunchReason.shouldOpenWindow(login: login, hasConsent: runtime.preferences.hasConsent) {
-            // SwiftUI owns the single main window; opening by identifier also works before it exists.
-            runtime.requestInitialWindow = true
-        }
+        // SwiftUI owns the single main window; opening by identifier also works before it exists.
+        runtime.finishLaunch(login: login)
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationWillTerminate(_ notification: Notification) { runtime?.stop() }

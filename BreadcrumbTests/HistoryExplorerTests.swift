@@ -277,3 +277,38 @@ extension HistoryExplorerTests {
         explorer.stop()
     }
 }
+
+extension HistoryExplorerTests {
+    @Test func samePeriodRefreshKeepsReportVisibleButRangeChangeDoesNot() async {
+        let gate = ReportGate()
+        let explorer = HistoryExplorer(
+            page: { _, _, _ in JourneyPage(rows: [], nextCursor: nil) }, report: { _ in Report() },
+            asyncReport: { _ in try await gate.read() })
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        explorer.refresh(now: now)
+        #expect(!explorer.keepsReportVisible)
+        await waitFor { gate.pending.count == 1 }
+        gate.finish(0, name: "Loaded")
+        await waitFor { !explorer.isReporting }
+        #expect(explorer.keepsReportVisible)
+        explorer.storeChanged(revision: 1, now: now.addingTimeInterval(5))
+        #expect(explorer.isReporting && explorer.keepsReportVisible)
+        explorer.stop()
+        explorer.range = .yesterday
+        explorer.refresh(now: now)
+        #expect(!explorer.keepsReportVisible)
+        explorer.stop()
+    }
+
+    @Test func drillDownShowsEntryNameAndClearRemovesIt() {
+        let explorer = HistoryExplorer(
+            page: { _, _, _ in JourneyPage(rows: [], nextCursor: nil) }, report: { _ in Report() })
+        explorer.refresh()
+        explorer.select(
+            RankedItem(key: "app:x", name: "Readable", bundleID: "x", visits: 1, total: 0), kind: .apps)
+        #expect(explorer.selectedName == "Readable")
+        explorer.clearFilters()
+        #expect(explorer.selectedName == nil)
+        explorer.stop()
+    }
+}

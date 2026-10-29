@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import Testing
 
 @testable import Breadcrumb
@@ -85,5 +86,37 @@ struct ActivityMonitorTests {
         preferences.pauseWhenIdle = true
         #expect(TrackingPreferences(defaults: defaults).pauseWhenIdle)
         #expect(!TrackingPreferences(defaults: nil).pauseWhenIdle)
+    }
+}
+
+@MainActor
+private final class IdleStub: ActivityProviding {
+    var idle: TimeInterval = 0
+    var time: Date?
+    func snapshot(at date: Date) -> ActivitySnapshot {
+        ActivitySnapshot(timestamp: time ?? date, idleSeconds: idle, session: .active)
+    }
+}
+
+extension ActivityMonitorTests {
+    @Test func enablingIdlePauseWhileIdleClosesAtLastInputNotAtToggleTime() throws {
+        let provider = IdleStub()
+        let monitor = ActivityMonitor(provider: provider, scheduler: SchedulerStub())
+        let preferences = TrackingPreferences(defaults: nil)
+        let store = try UsageStore.open(inMemory: true)
+        let runtime = AppRuntime(
+            preferences: preferences, login: LoginItemController(service: IsolatedLoginItemService()),
+            activityMonitor: monitor,
+            currentApp: { ForegroundApp(name: "Synthetic", bundleID: "synthetic") },
+            openStore: { store })
+        runtime.start()
+        defer { runtime.stop() }
+        preferences.hasConsent = true
+        let start = try #require(store.context.fetch(FetchDescriptor<UsageEvent>()).first).timestamp
+        provider.time = start.addingTimeInterval(420)
+        provider.idle = 360
+        preferences.pauseWhenIdle = true
+        let event = try #require(store.context.fetch(FetchDescriptor<UsageEvent>()).first)
+        #expect(event.endedAt == start.addingTimeInterval(60))
     }
 }

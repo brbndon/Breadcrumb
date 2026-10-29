@@ -134,3 +134,47 @@ extension LoginItemTests {
         second.stop()
     }
 }
+
+@MainActor
+private final class PolicyLog {
+    var policies: [NSApplication.ActivationPolicy] = []
+}
+
+extension LoginItemTests {
+    private func launched(login: Bool, consent: Bool, paused: Bool = false) -> (AppRuntime, PolicyLog) {
+        let log = PolicyLog()
+        let preferences = TrackingPreferences(defaults: nil)
+        preferences.hasConsent = consent
+        preferences.isPaused = paused
+        let presence = AppPresence(defaults: nil) { log.policies.append($0) }
+        presence.hideWhenNoWindows = true
+        log.policies.removeAll()
+        let runtime = AppRuntime(
+            preferences: preferences, presence: presence, login: LoginItemController(service: LoginStub()),
+            automaticCapture: false
+        ) { try UsageStore.open(inMemory: true) }
+        runtime.finishLaunch(login: login)
+        return (runtime, log)
+    }
+
+    @Test func manualLaunchRequestsWindowAndLeavesDockPolicyToWindowEvents() {
+        let (runtime, log) = launched(login: false, consent: true)
+        #expect(runtime.requestInitialWindow)
+        #expect(log.policies.isEmpty)
+    }
+
+    @Test func loginLaunchWithConsentStaysQuietAndAppliesDockHiding() {
+        let (runtime, log) = launched(login: true, consent: true, paused: true)
+        #expect(!runtime.requestInitialWindow)
+        #expect(log.policies == [.accessory])
+        #expect(runtime.preferences.isPaused)
+        #expect(runtime.preferences.hasConsent)
+    }
+
+    @Test func loginLaunchWithoutConsentStillExposesPrivacySetup() {
+        let (runtime, log) = launched(login: true, consent: false)
+        #expect(runtime.requestInitialWindow)
+        #expect(log.policies.isEmpty)
+        #expect(!runtime.preferences.hasConsent)
+    }
+}
