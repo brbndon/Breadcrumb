@@ -2,19 +2,28 @@ import AppKit
 import SwiftUI
 
 struct JourneyView: View {
-    let rows: [JourneyRow]
+    @Bindable var explorer: HistoryExplorer
+    private var rows: [JourneyRow] { explorer.rows }
 
     var body: some View {
-        if rows.isEmpty {
-            ContentUnavailableView(
-                "No journey yet",
-                systemImage: "point.topleft.down.to.point.bottomright.curvepath",
-                description: Text("Switch between a few apps and your path will appear here.")
-            )
-        } else {
+        VStack(spacing: 0) {
+            if rows.isEmpty && !explorer.isLoading && explorer.journeyError == nil {
+                ContentUnavailableView(
+                    explorer.filter.isActive ? "No matching visits" : "No journey in this period",
+                    systemImage: "point.topleft.down.to.point.bottomright.curvepath",
+                    description: Text("Search applies to the complete selected period.")
+                )
+            }
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                        if index == 0
+                            || !Calendar.current.isDate(
+                                row.event.timestamp, inSameDayAs: rows[index - 1].event.timestamp)
+                        {
+                            Text(row.event.timestamp.formatted(date: .abbreviated, time: .omitted))
+                                .font(.headline).frame(maxWidth: .infinity, alignment: .leading).padding()
+                        }
                         JourneyRowView(
                             row: row,
                             showTime: index == 0
@@ -22,6 +31,18 @@ struct JourneyView: View {
                                     row.event.timestamp, equalTo: rows[index - 1].event.timestamp,
                                     toGranularity: .minute)
                         )
+                    }
+                    if explorer.isLoading {
+                        ProgressView("Loading visits").padding()
+                    } else if let message = explorer.journeyError {
+                        Text(message).padding()
+                        Button("Retry Journey") { explorer.retryJourney() }.padding()
+                    } else if explorer.nextCursor != nil {
+                        Button("Load older") { explorer.loadOlder() }
+                            .accessibilityLabel("Load 100 older matching visits").padding()
+                    } else if !rows.isEmpty {
+                        Text("All matching visits loaded").font(.caption).foregroundStyle(.secondary)
+                            .padding()
                     }
                 }
                 .frame(maxWidth: 672)

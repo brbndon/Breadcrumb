@@ -1,11 +1,9 @@
 import Combine
-import SwiftData
 import SwiftUI
 
 struct RootView: View {
     @Environment(AppRuntime.self) private var runtime
-    @State private var range = DateRange.today
-    @State private var now = Date.now
+    @State private var explorer: HistoryExplorer?
     private let refresh = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -19,21 +17,30 @@ struct RootView: View {
             if !runtime.preferences.hasConsent {
                 PrivacyIntroduction()
             } else {
-                HSplitView {
-                    RangeSidebar(selection: $range)
-                        .frame(minWidth: 140, idealWidth: 160, maxWidth: 220)
-                    RangeContent(interval: range.interval(now: now), selection: range.rawValue)
-                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                if let explorer {
+                    ExplorerContent(explorer: explorer)
+                } else {
+                    ProgressView("Loading history")
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .font(.system(.body, design: .monospaced))
         .background(PaperCanvas())
         .tint(BreadcrumbPalette.rose)
-        .onReceive(refresh) {
-            now = $0
-            runtime.tracker?.refresh()
+        .task(id: runtime.store.map(ObjectIdentifier.init)) {
+            explorer?.stop()
+            if let store = runtime.store {
+                let owner = HistoryExplorer(store: store)
+                explorer = owner
+                owner.storeChanged(revision: store.revision)
+            }
         }
+        .onChange(of: runtime.store?.revision) {
+            explorer?.storeChanged(revision: runtime.store?.revision ?? 0)
+        }
+        .onReceive(refresh) { explorer?.dayChanged(now: $0) }
+        .onDisappear { explorer?.stop() }
         .alert(
             "Breadcrumb",
             isPresented: Binding(
@@ -48,64 +55,30 @@ struct RootView: View {
     }
 }
 
-private struct RangeContent: View {
-    @Environment(AppRuntime.self) private var runtime
-    @Query private var recentEvents: [UsageEvent]
-    let interval: Range<Date>
-    let selection: String
-    @State private var report = Report()
-    @State private var reportError = false
-
-    init(interval: Range<Date>, selection: String) {
-        self.interval = interval
-        self.selection = selection
-        let start = interval.lowerBound
-        let end = interval.upperBound
-        var descriptor = FetchDescriptor<UsageEvent>(
-            predicate: #Predicate { $0.timestamp >= start && $0.timestamp < end },
-            sortBy: [SortDescriptor(\.timestamp, order: .reverse)])
-        descriptor.fetchLimit = 200
-        _recentEvents = Query(descriptor)
-    }
+private struct ExplorerContent: View {
+    @Bindable var explorer: HistoryExplorer
 
     var body: some View {
         HSplitView {
-            JourneyView(rows: ReportBuilder.journey(events: recentEvents.map(\.sample)))
-                .frame(minWidth: 420, idealWidth: 620, maxHeight: .infinity)
+            RangeSidebar(selection: $explorer.range)
+                .frame(minWidth: 120, idealWidth: 140, maxWidth: 180)
+                .onChange(of: explorer.range) { explorer.refresh() }
+            VStack(spacing: 0) {
+                HistoryControls(explorer: explorer)
+                Divider()
+                JourneyView(explorer: explorer)
+            }.frame(minWidth: 380, idealWidth: 550, maxHeight: .infinity)
             Group {
-                if reportError {
+                if let error = explorer.reportError {
                     VStack {
-                        Text("Report unavailable. History has been kept.")
-                        Button("Retry Report") { updateReport() }
+                        Text(error)
+                        Button("Retry Report") { explorer.updateReports() }
                     }.padding()
                 } else {
-                    ReportView(report: report)
+                    ReportView(report: explorer.report)
                 }
-            }.frame(minWidth: 280, maxHeight: .infinity)
+            }.frame(minWidth: 300, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .task(
-            id: ReportRefreshKey(
-                selection: selection, start: interval.lowerBound,
-                revision: runtime.store?.revision ?? 0, visibleIDs: recentEvents.map(\.id)
-            )
-        ) { updateReport() }
     }
-
-    private func updateReport() {
-        do {
-            report = try runtime.store?.report(in: interval) ?? Report()
-            reportError = false
-        } catch {
-            reportError = true
-        }
-    }
-}
-
-/// A clock tick alone does not invalidate aggregates; midnight, saves, and newly visible visits do.
-private struct ReportRefreshKey: Equatable {
-    let selection: String
-    let start: Date
-    let revision: Int
-    let visibleIDs: [UUID]
 }

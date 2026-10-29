@@ -143,6 +143,7 @@ enum ReportBuilder {
 struct JourneyRow: Identifiable, Equatable, Sendable {
     let event: EventSample
     let dwell: TimeInterval?
+    var isCarryIn = false
     var id: UUID { event.id }
 }
 
