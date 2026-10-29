@@ -33,7 +33,44 @@ final class FrontmostAppTracker {
     private var pollingBundleID: String?
     private var currentEvent: EventSample?
     private var pendingBoundary: Date?
-    private var sleeping = false
+    private var systemSleeping = false
+    private var displaySleeping = false
+    private var sleeping: Bool { systemSleeping || displaySleeping }
+    private let requiresActivity: Bool
+    private var activity: ActivitySnapshot?
+    private var resumeNotBefore: Date?
+    private var clockBlocked = false
+    private var earliestCaptureDate: Date {
+        max(resumeNotBefore ?? .distantPast, currentEvent?.timestamp ?? .distantPast)
+    }
+
+    var activityMessage: String? {
+        guard requiresActivity else { return nil }
+        guard let activity else { return "Checking session activity. Tracking is paused." }
+        if activity.session == .unknown {
+            return "Session activity is unavailable. Tracking is paused; retry the activity check."
+        }
+        if activity.session == .inactive {
+            return "Tracking is paused while this console session is inactive."
+        }
+        if activity.session == .locked { return "Tracking is paused while the session is locked." }
+        if clockBlocked {
+            return "Tracking is paused until the clock catches up with the last visit boundary."
+        }
+        if preferences.pauseWhenIdle {
+            guard let idle = activity.idleSeconds, idle.isFinite, idle >= 0 else {
+                return "Idle activity is unavailable. Tracking is paused; retry the activity check."
+            }
+            if idle >= 300 { return "Tracking is paused after five minutes without input." }
+        }
+        return nil
+    }
+    var isAutomaticallyPaused: Bool { sleeping || activityMessage != nil }
+    private var activityAllowsCapture: Bool { activityMessage == nil }
+    private func eligible(at date: Date) -> Bool {
+        preferences.hasConsent && !isPaused && !sleeping && activityAllowsCapture
+            && date >= earliestCaptureDate
+    }
     private var running = false
     private var generation = 0
 
@@ -41,13 +78,14 @@ final class FrontmostAppTracker {
         store: any EventWriting, preferences: TrackingPreferences,
         currentApp: @escaping @MainActor () -> ForegroundApp? = { ForegroundApp.current() },
         clock: @escaping () -> Date = { .now },
-        browserReader: any BrowserHostReading = BrowserHostReader()
+        browserReader: any BrowserHostReading = BrowserHostReader(), requiresActivity: Bool = false
     ) {
         self.store = store
         self.preferences = preferences
         self.currentApp = currentApp
         self.clock = clock
         self.browserReader = browserReader
+        self.requiresActivity = requiresActivity
         preferences.onChange = { [weak self] in self?.policyChanged() }
     }
 
@@ -70,11 +108,17 @@ final class FrontmostAppTracker {
 
     func handleWorkspaceNotification(_ name: Notification.Name) {
         switch name {
-        case NSWorkspace.willSleepNotification, NSWorkspace.screensDidSleepNotification:
-            sleeping = true
+        case NSWorkspace.willSleepNotification:
+            systemSleeping = true
             endSegment()
-        case NSWorkspace.didWakeNotification, NSWorkspace.screensDidWakeNotification:
-            sleeping = false
+        case NSWorkspace.screensDidSleepNotification:
+            displaySleeping = true
+            endSegment()
+        case NSWorkspace.didWakeNotification:
+            systemSleeping = false
+            refresh()
+        case NSWorkspace.screensDidWakeNotification:
+            displaySleeping = false
             refresh()
         default:
             refresh()
@@ -90,10 +134,16 @@ final class FrontmostAppTracker {
 
     func refresh() {
         guard running else { return }
+        let date = clock()
+        guard eligible(at: date) else {
+            endSegment(at: date)
+            return
+        }
+        guard pendingBoundary == nil, errorMessage == nil else { return }
         let app = currentApp()
         let readsHost =
             app?.bundleID.map {
-                preferences.hasConsent && !isPaused && !sleeping
+                eligible(at: clock())
                     && !preferences.excludedBundleIDs.contains($0)
                     && preferences.enabledBrowserIDs.contains($0) && BrowserHostReader.supported[$0] != nil
             } ?? false
@@ -104,7 +154,8 @@ final class FrontmostAppTracker {
     /// Also used by deterministic capture tests; app metadata is never logged.
     func record(_ app: ForegroundApp?, at date: Date) {
         guard pendingBoundary == nil, errorMessage == nil else { return }
-        guard preferences.hasConsent, !isPaused, !sleeping,
+        if date < earliestCaptureDate { clockBlocked = true }
+        guard eligible(at: date),
             let app, !preferences.excludedBundleIDs.contains(app.identity)
         else {
             endSegment(at: date)
@@ -122,14 +173,38 @@ final class FrontmostAppTracker {
         browserTask = nil
         pollingBundleID = nil
         guard let currentEvent else { return }
-        let boundary = pendingBoundary ?? date ?? clock()
+        let requested = max(currentEvent.timestamp, date ?? clock())
+        let boundary = min(pendingBoundary ?? requested, requested)
         do {
             try store.close(id: currentEvent.id, at: boundary)
             self.currentEvent = nil
+            resumeNotBefore = max(resumeNotBefore ?? boundary, boundary)
             pendingBoundary = nil
         } catch {
             pendingBoundary = boundary
             errorMessage = "History could not be saved. Tracking is stopped. Free up disk space and retry."
+        }
+    }
+
+    func updateActivity(_ snapshot: ActivitySnapshot) {
+        let wasAllowed = activityAllowsCapture
+        if snapshot.timestamp.timeIntervalSince1970.isFinite {
+            clockBlocked = snapshot.timestamp < earliestCaptureDate
+            activity = snapshot
+        } else {
+            activity = ActivitySnapshot(timestamp: clock(), idleSeconds: nil, session: .unknown)
+        }
+        if !activityAllowsCapture {
+            var boundary = activity?.timestamp ?? clock()
+            if snapshot.session == .active, preferences.pauseWhenIdle,
+                let idle = snapshot.idleSeconds, idle.isFinite, idle >= 300
+            {
+                boundary = snapshot.timestamp.addingTimeInterval(-idle)
+                boundary = min(snapshot.timestamp, max(currentEvent?.timestamp ?? boundary, boundary))
+            }
+            endSegment(at: boundary)
+        } else if !wasAllowed {
+            refresh()
         }
     }
 
@@ -156,9 +231,9 @@ final class FrontmostAppTracker {
         }
     }
 
-    private func policyChanged() {
+    func policyChanged(refresh shouldRefresh: Bool = true) {
         endSegment()
-        if pendingBoundary == nil { refresh() }
+        if shouldRefresh && pendingBoundary == nil { refresh() }
     }
 
     private func persist(_ sample: EventSample) {
@@ -174,7 +249,7 @@ final class FrontmostAppTracker {
     }
 
     private func startBrowserPolling() {
-        guard preferences.hasConsent, !isPaused, !sleeping, pendingBoundary == nil, errorMessage == nil,
+        guard eligible(at: clock()), pendingBoundary == nil, errorMessage == nil,
             let app = currentApp(), let id = app.bundleID,
             preferences.enabledBrowserIDs.contains(id),
             !preferences.excludedBundleIDs.contains(id), BrowserHostReader.supported[id] != nil
@@ -195,6 +270,7 @@ final class FrontmostAppTracker {
                 let timestamp = self?.clock() ?? .now
                 let result = await browserReader.read(bundleID: id)
                 guard let self, !Task.isCancelled, self.generation == token, self.errorMessage == nil,
+                    self.eligible(at: self.clock()),
                     self.currentApp()?.bundleID == id
                 else { return }
                 switch result {

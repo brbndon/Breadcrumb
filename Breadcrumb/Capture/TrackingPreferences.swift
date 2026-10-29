@@ -16,6 +16,12 @@ final class TrackingPreferences {
             onChange?()
         }
     }
+    var pauseWhenIdle: Bool {
+        didSet {
+            defaults?.set(pauseWhenIdle, forKey: "pauseWhenIdle")
+            onChange?()
+        }
+    }
     var excludedBundleIDs: [String] {
         didSet {
             defaults?.set(excludedBundleIDs, forKey: "excludedBundleIDs")
@@ -35,6 +41,7 @@ final class TrackingPreferences {
         self.defaults = defaults
         hasConsent = defaults?.bool(forKey: "privacyExplained") ?? false
         isPaused = defaults?.bool(forKey: "trackingPaused") ?? false
+        pauseWhenIdle = defaults?.bool(forKey: "pauseWhenIdle") ?? false
         excludedBundleIDs = defaults?.stringArray(forKey: "excludedBundleIDs") ?? []
         enabledBrowserIDs = defaults?.stringArray(forKey: "enabledBrowserIDs") ?? []
     }

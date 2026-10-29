@@ -16,6 +16,7 @@ struct MenuBarContent: View {
                 Button(tracker.isPaused ? "Resume Tracking" : "Stop Tracking") {
                     tracker.isPaused.toggle()
                 }
+                if let message = tracker.activityMessage { Text(message) }
                 if tracker.errorMessage != nil { Button("Retry Saving History") { tracker.retry() } }
             } else {
                 Text("Complete privacy setup to start tracking")

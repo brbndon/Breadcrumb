@@ -119,3 +119,18 @@ struct LoginItemTests {
         runtime.stop()
     }
 }
+
+extension LoginItemTests {
+    @Test func isolatedAppearanceDoesNotPersistBetweenRuntimes() throws {
+        let first = AppRuntime(preferences: TrackingPreferences(defaults: nil), automaticCapture: false) {
+            try UsageStore.open(inMemory: true)
+        }
+        first.appearance = .dark
+        let second = AppRuntime(preferences: TrackingPreferences(defaults: nil), automaticCapture: false) {
+            try UsageStore.open(inMemory: true)
+        }
+        #expect(second.appearance == .auto)
+        first.stop()
+        second.stop()
+    }
+}

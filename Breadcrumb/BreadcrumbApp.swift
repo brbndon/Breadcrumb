@@ -6,16 +6,30 @@ import SwiftUI
 struct BreadcrumbApp: App {
     @NSApplicationDelegateAdaptor(BreadcrumbDelegate.self) private var delegate
     @State private var runtime: AppRuntime
-    @AppStorage("appearance") private var appearance = AppearanceSetting.auto
 
     init() {
         let environment = ProcessInfo.processInfo.environment
         let isolated = environment["BREADCRUMB_TESTING"] == "1" || environment["BREADCRUMB_DEMO"] == "1"
+        let activityProbe =
+            environment["BREADCRUMB_DEMO"] == "1" && environment["BREADCRUMB_ACTIVITY_PROBE"] == "1"
         let preferences = TrackingPreferences(defaults: isolated ? nil : .standard)
         let runtime = AppRuntime(
             preferences: preferences, presence: AppPresence(defaults: isolated ? nil : .standard),
-            automaticCapture: !isolated,
+            login: LoginItemController(
+                service: isolated ? IsolatedLoginItemService() : SystemLoginItemService()),
+            activityMonitor: activityProbe ? ActivityMonitor(provider: SystemActivityProvider()) : nil,
+            currentApp: {
+                isolated
+                    ? ForegroundApp(name: "Synthetic foreground app", bundleID: "demo.synthetic")
+                    : ForegroundApp.current()
+            },
+            automaticCapture: !isolated || activityProbe, appearanceDefaults: isolated ? nil : .standard,
             openStore: { try UsageStore.open(inMemory: isolated) })
+        if environment["BREADCRUMB_DEMO"] == "1", let store = runtime.store {
+            do { try DemoHistory.populate(store: store, now: .now) } catch {
+                runtime.notify("Synthetic demo history could not be prepared.")
+            }
+        }
         _runtime = State(initialValue: runtime)
         delegate.runtime = runtime
     }
@@ -30,7 +44,7 @@ struct BreadcrumbApp: App {
                 }
             }
             .frame(minWidth: 960, minHeight: 640)
-            .preferredColorScheme(appearance.colorScheme)
+            .preferredColorScheme(runtime.appearance.colorScheme)
             .environment(runtime)
             .background(AppPresenceWindow(presence: runtime.presence))
 
@@ -44,13 +58,13 @@ struct BreadcrumbApp: App {
         } label: {
             let paused =
                 runtime.tracker?.isPaused != false || !runtime.preferences.hasConsent
-                || runtime.tracker?.errorMessage != nil
+                || runtime.tracker?.errorMessage != nil || runtime.tracker?.isAutomaticallyPaused == true
             LaunchMenuLabel(runtime: runtime, paused: paused)
         }
 
         Settings {
             SettingsView()
-                .preferredColorScheme(appearance.colorScheme)
+                .preferredColorScheme(runtime.appearance.colorScheme)
                 .environment(runtime)
                 .background(AppPresenceWindow(presence: runtime.presence))
         }

@@ -9,6 +9,13 @@ final class AppRuntime {
     let preferences: TrackingPreferences
     let presence: AppPresence
     let login: LoginItemController
+    let activityMonitor: ActivityMonitor
+    var appearance: AppearanceSetting {
+        didSet { appearanceDefaults?.set(appearance.rawValue, forKey: "appearance") }
+    }
+    private let appearanceDefaults: UserDefaults?
+    private let currentApp: @MainActor () -> ForegroundApp?
+    private var running = false
     private(set) var store: UsageStore?
     private(set) var tracker: FrontmostAppTracker?
     private(set) var storageError: String?
@@ -21,7 +28,9 @@ final class AppRuntime {
     init(
         preferences: TrackingPreferences = TrackingPreferences(),
         presence: AppPresence = AppPresence(), login: LoginItemController? = nil,
-        automaticCapture: Bool = true,
+        activityMonitor: ActivityMonitor? = nil,
+        currentApp: @escaping @MainActor () -> ForegroundApp? = { ForegroundApp.current() },
+        automaticCapture: Bool = true, appearanceDefaults: UserDefaults? = nil,
         openStore: @escaping () throws -> UsageStore = { try UsageStore.open() }
     ) {
         self.preferences = preferences
@@ -31,17 +40,37 @@ final class AppRuntime {
             ?? LoginItemController(
                 service: automaticCapture ? SystemLoginItemService() : IsolatedLoginItemService())
         self.automaticCapture = automaticCapture
+        self.currentApp = currentApp
+        self.activityMonitor =
+            activityMonitor
+            ?? ActivityMonitor(
+                provider: automaticCapture ? SystemActivityProvider() : IsolatedActivityProvider())
+        self.appearanceDefaults = appearanceDefaults
+        appearance =
+            appearanceDefaults?.string(forKey: "appearance").flatMap(AppearanceSetting.init(rawValue:))
+            ?? .auto
         self.openStore = openStore
+        self.activityMonitor.onSample = { [weak self] snapshot in self?.tracker?.updateActivity(snapshot) }
         load()
     }
 
     func load() {
+        activityMonitor.stop()
         tracker?.stop()
         do {
             let store = try openStore()
             self.store = store
-            tracker = FrontmostAppTracker(store: store, preferences: preferences)
+            tracker = FrontmostAppTracker(
+                store: store, preferences: preferences, currentApp: currentApp,
+                requiresActivity: automaticCapture)
+            preferences.onChange = { [weak self] in
+                guard let self else { return }
+                self.tracker?.policyChanged(refresh: false)
+                self.reconcileActivity()
+                self.tracker?.refresh()
+            }
             storageError = nil
+            if running { startServices() }
         } catch {
             store = nil
             tracker = nil
@@ -50,8 +79,25 @@ final class AppRuntime {
         }
     }
 
-    func start() { if automaticCapture { tracker?.start() } }
+    func start() {
+        guard automaticCapture else { return }
+        running = true
+        startServices()
+    }
+    private func startServices() {
+        reconcileActivity()
+        tracker?.start()
+    }
+    private func reconcileActivity() {
+        if running && preferences.hasConsent && tracker != nil {
+            if activityMonitor.isRunning { activityMonitor.sample() } else { activityMonitor.start() }
+        } else {
+            activityMonitor.stop()
+        }
+    }
     func stop() {
+        running = false
+        activityMonitor.stop()
         tracker?.stop()
         login.stop()
     }

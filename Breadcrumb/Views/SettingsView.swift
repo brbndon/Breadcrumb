@@ -3,15 +3,15 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct SettingsView: View {
-    @AppStorage("appearance") private var appearance = AppearanceSetting.auto
     @Environment(AppRuntime.self) private var runtime
     @State private var confirmingDelete = false
 
     var body: some View {
+        @Bindable var runtime = runtime
         @Bindable var preferences = runtime.preferences
         @Bindable var presence = runtime.presence
         Form {
-            Picker("Appearance", selection: $appearance) {
+            Picker("Appearance", selection: $runtime.appearance) {
                 ForEach(AppearanceSetting.allCases) { Text($0.rawValue).tag($0) }
             }.pickerStyle(.segmented)
 
@@ -44,6 +44,20 @@ struct SettingsView: View {
             Section("Tracking") {
                 Toggle("Pause tracking", isOn: $preferences.isPaused)
                     .disabled(!preferences.hasConsent || runtime.tracker == nil)
+                Toggle("Pause when idle", isOn: $preferences.pauseWhenIdle)
+                    .disabled(!preferences.hasConsent)
+                Text(
+                    "After five minutes without input, the visit ends at the inferred last input time. Passive reading can look idle. This setting is off by default."
+                )
+                .foregroundStyle(.secondary)
+                Text(
+                    "Console inactivity and sleep stop capture. Actual screen-lock detection is unavailable with the public APIs used here."
+                )
+                .foregroundStyle(.secondary)
+                if let message = runtime.tracker?.activityMessage {
+                    Text(message)
+                    Button("Retry Activity Check") { runtime.activityMonitor.sample() }
+                }
                 if !preferences.hasConsent {
                     Text("Open Breadcrumb to complete privacy setup before tracking.")
                 }

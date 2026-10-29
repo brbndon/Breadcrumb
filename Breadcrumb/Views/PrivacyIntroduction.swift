@@ -16,7 +16,7 @@ struct PrivacyIntroduction: View {
                 "Arc and Dia integrations are off by default. Enable either in Settings to request Automation permission and record only website hosts. Full URLs and page titles are never stored."
             )
             Text(
-                "Pause, exclude apps, export, or delete history in Settings. Pauses, exclusions, and sleep end the current tracking segment. Active time is an estimate capped at five minutes per visit, not keyboard or mouse activity."
+                "Pause, exclude apps, export, or delete history in Settings. Pauses, exclusions, sleep, and console-session inactivity end the current tracking segment. Optional idle pausing uses only aggregate time since input, never keys, mouse positions, or input contents. Actual screen-lock detection is unavailable. Estimated time is capped at five minutes per visit. The newest ongoing visit contributes zero until its duration is known. Recorded visit duration is uncapped and can include unattended time."
             )
             HStack {
                 Button("Start Tracking") {
