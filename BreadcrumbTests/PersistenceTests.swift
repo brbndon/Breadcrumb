@@ -57,7 +57,7 @@ struct PersistenceTests {
         let report = try store.report(in: first.timestamp..<first.timestamp.addingTimeInterval(60))
         #expect(report.apps == 1)
         #expect(report.switches == 0)
-        #expect(report.activeMinutes == 0)
+        #expect(report.activeMinutes == 1)
     }
 
     @Test func diskStoreUsesAppScopedFilenameAndPersists() throws {

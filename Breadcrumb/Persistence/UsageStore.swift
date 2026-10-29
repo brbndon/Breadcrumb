@@ -92,14 +92,56 @@ final class UsageStore: EventWriting {
     }
 
     func report(in range: Range<Date>) throws -> Report {
+        var accumulator = ReportBuilder.Accumulator(interval: range)
+        if let predecessor = try neighbor(of: range.lowerBound, before: true) {
+            accumulator.append(predecessor)
+        }
         let start = range.lowerBound
         let end = range.upperBound
         let descriptor = FetchDescriptor<UsageEvent>(
             predicate: #Predicate { $0.timestamp >= start && $0.timestamp < end },
             sortBy: [SortDescriptor(\.timestamp)])
-        var accumulator = ReportBuilder.Accumulator()
-        try context.enumerate(descriptor, batchSize: 500) { accumulator.append($0.sample) }
+        try enumerateChronologically(descriptor) { accumulator.append($0) }
+        if let successor = try neighbor(of: end, before: false) { accumulator.append(successor) }
         return accumulator.report()
+    }
+
+    /// UUID comparison is performed on value snapshots within timestamp buckets.
+    /// SwiftData cannot express UUID-string ordering without a schema change.
+    func neighbor(of timestamp: Date, before: Bool) throws -> EventSample? {
+        var descriptor: FetchDescriptor<UsageEvent>
+        if before {
+            descriptor = FetchDescriptor(
+                predicate: #Predicate { $0.timestamp < timestamp },
+                sortBy: [SortDescriptor(\.timestamp, order: .reverse)])
+        } else {
+            descriptor = FetchDescriptor(
+                predicate: #Predicate { $0.timestamp >= timestamp },
+                sortBy: [SortDescriptor(\.timestamp)])
+        }
+        descriptor.fetchLimit = 1
+        guard let time = try context.fetch(descriptor).first?.timestamp else { return nil }
+        let bucket = try samples(at: time)
+        return before ? bucket.last : bucket.first
+    }
+
+    func samples(at timestamp: Date) throws -> [EventSample] {
+        try context.fetch(FetchDescriptor<UsageEvent>(predicate: #Predicate { $0.timestamp == timestamp }))
+            .map(\.sample).sorted(by: ReportBuilder.chronological)
+    }
+
+    func enumerateChronologically(
+        _ descriptor: FetchDescriptor<UsageEvent>, visit: (EventSample) throws -> Void
+    ) throws {
+        var bucket: [EventSample] = []
+        try context.enumerate(descriptor, batchSize: 500) { event in
+            if let timestamp = bucket.first?.timestamp, event.timestamp != timestamp {
+                for sample in bucket.sorted(by: ReportBuilder.chronological) { try visit(sample) }
+                bucket.removeAll(keepingCapacity: true)
+            }
+            bucket.append(event.sample)
+        }
+        for sample in bucket.sorted(by: ReportBuilder.chronological) { try visit(sample) }
     }
 
     private func transaction(_ operation: () throws -> Void) throws {

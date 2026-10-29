@@ -35,8 +35,8 @@ enum ReportBuilder {
     static let activeCap: TimeInterval = 5 * 60
     static let listLimit = 6
 
-    static func build(events: [EventSample]) -> Report {
-        var accumulator = Accumulator()
+    static func build(events: [EventSample], in interval: Range<Date>? = nil) -> Report {
+        var accumulator = Accumulator(interval: interval)
         for event in events.sorted(by: chronological) { accumulator.append(event) }
         return accumulator.report()
     }
@@ -53,6 +53,9 @@ enum ReportBuilder {
 
     /// Closed visits terminate a tracking segment; transitions never cross that boundary.
     struct Accumulator {
+        let interval: Range<Date>?
+        init(interval: Range<Date>? = nil) { self.interval = interval }
+
         private var previous: EventSample?
         private var stats: [String: RankedItem] = [:]
         private var kinds: [String: EventKind] = [:]
@@ -62,8 +65,10 @@ enum ReportBuilder {
 
         mutating func append(_ event: EventSample) {
             if let previous {
-                addDwell(previous, next: event)
-                if previous.endedAt == nil && previous.nodeKey != event.nodeKey {
+                addVisit(previous, next: event)
+                if previous.endedAt == nil && previous.nodeKey != event.nodeKey
+                    && (interval?.contains(event.timestamp) ?? true)
+                {
                     switches += 1
                     let key = TransitionKey(from: previous.nodeKey, to: event.nodeKey)
                     var pair =
@@ -74,26 +79,33 @@ enum ReportBuilder {
                     pairs[key] = pair
                 }
             }
-            let old = stats[event.nodeKey]
-            stats[event.nodeKey] = RankedItem(
-                key: event.nodeKey, name: event.displayName, bundleID: event.bundleID,
-                visits: (old?.visits ?? 0) + 1, total: old?.total ?? 0)
-            kinds[event.nodeKey] = event.kind
             previous = event
         }
 
-        private mutating func addDwell(_ event: EventSample, next: EventSample?) {
-            guard let old = stats[event.nodeKey] else { return }
-            let seconds = min(ReportBuilder.dwell(event, next: next) ?? 0, activeCap)
-            activeSeconds += seconds
+        private mutating func addVisit(_ event: EventSample, next: EventSample?) {
+            let dwell = ReportBuilder.dwell(event, next: next)
+            let end = event.timestamp.addingTimeInterval(dwell ?? 0)
+            let startsInside = interval?.contains(event.timestamp) ?? true
+            let overlaps =
+                interval.map {
+                    event.timestamp < $0.upperBound && end > $0.lowerBound && end > event.timestamp
+                } ?? true
+            guard startsInside || overlaps else { return }
+            let cappedEnd = min(end, event.timestamp.addingTimeInterval(activeCap))
+            let clippedStart = max(event.timestamp, interval?.lowerBound ?? event.timestamp)
+            let clippedEnd = min(cappedEnd, interval?.upperBound ?? cappedEnd)
+            let seconds = max(0, clippedEnd.timeIntervalSince(clippedStart))
+            let old = stats[event.nodeKey]
             stats[event.nodeKey] = RankedItem(
-                key: old.key, name: old.name, bundleID: old.bundleID,
-                visits: old.visits, total: old.total + seconds)
+                key: event.nodeKey, name: event.displayName, bundleID: event.bundleID,
+                visits: (old?.visits ?? 0) + 1, total: (old?.total ?? 0) + seconds)
+            kinds[event.nodeKey] = event.kind
+            activeSeconds += seconds
         }
 
         func report() -> Report {
             var result = self
-            if let previous { result.addDwell(previous, next: nil) }
+            if let previous { result.addVisit(previous, next: nil) }
             func ranked(_ kind: EventKind) -> [RankedItem] {
                 Array(
                     result.stats.values.filter { result.kinds[$0.key] == kind }.sorted {

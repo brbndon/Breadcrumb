@@ -58,3 +58,41 @@ struct ReportBuilderTests {
         #expect(Set(report.transitions.map(\.id)).count == report.transitions.count)
     }
 }
+
+extension ReportBuilderTests {
+    @Test func capIsNotRenewedAtRangeBoundary() {
+        let events = [event("A", at: 0), event("B", at: 3600)]
+        let interval = base.addingTimeInterval(600)..<base.addingTimeInterval(1200)
+        let report = ReportBuilder.build(events: events, in: interval)
+        #expect(report.activeMinutes == 0)
+        #expect(report.topApps.first?.visits == 1)
+    }
+
+    @Test func successorOutsideIntervalResolvesDwellWithoutCountingDestination() {
+        let report = ReportBuilder.build(
+            events: [event("A", at: 0), event("B", at: 60)], in: base..<base.addingTimeInterval(60))
+        #expect(report.apps == 1)
+        #expect(report.switches == 0)
+        #expect(report.activeMinutes == 1)
+    }
+
+    @Test func explicitClosureAndCarryInAreClippedOnce() {
+        var a = event("A", at: 0)
+        a.endedAt = base.addingTimeInterval(120)
+        let events = [a, event("B", at: 600)]
+        let report = ReportBuilder.build(
+            events: events, in: base.addingTimeInterval(60)..<base.addingTimeInterval(700))
+        #expect(report.activeMinutes == 1)
+        #expect(report.switches == 0)
+        #expect(report.apps == 2)
+    }
+
+    @Test func zeroNegativeAndUnknownVisitsInsideRangeRemainVisits() {
+        var a = event("A", at: 0)
+        a.endedAt = base.addingTimeInterval(-10)
+        let report = ReportBuilder.build(
+            events: [a, event("B", at: 0), event("C", at: 1)], in: base..<base.addingTimeInterval(2))
+        #expect(report.apps == 3)
+        #expect(report.activeMinutes == 0)
+    }
+}
