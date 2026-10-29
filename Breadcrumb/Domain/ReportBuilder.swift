@@ -107,13 +107,8 @@ enum ReportBuilder {
             var result = self
             if let previous { result.addVisit(previous, next: nil) }
             func ranked(_ kind: EventKind) -> [RankedItem] {
-                Array(
-                    result.stats.values.filter { result.kinds[$0.key] == kind }.sorted {
-                        if $0.visits != $1.visits { return $0.visits > $1.visits }
-                        if $0.total != $1.total { return $0.total > $1.total }
-                        if $0.name != $1.name { return $0.name < $1.name }
-                        return $0.key < $1.key
-                    }.prefix(listLimit))
+                ReportBuilder.rankedItems(
+                    result.stats.values.filter { result.kinds[$0.key] == kind }, by: .visits)
             }
             return Report(
                 switches: switches,
@@ -128,6 +123,15 @@ enum ReportBuilder {
                         if $0.id.from != $1.id.from { return $0.id.from < $1.id.from }
                         return $0.id.to < $1.id.to
                     }.prefix(listLimit)))
+        }
+    }
+
+    static func rankedItems(_ items: [RankedItem], by sort: ReportSort) -> [RankedItem] {
+        items.sorted {
+            if sort == .visits && $0.visits != $1.visits { return $0.visits > $1.visits }
+            if sort == .estimatedTime && $0.total != $1.total { return $0.total > $1.total }
+            if $0.name != $1.name { return $0.name < $1.name }
+            return $0.key < $1.key
         }
     }
 

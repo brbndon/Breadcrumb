@@ -27,5 +27,6 @@ struct HistoryControls: View {
                 Text("Selected: \(node)").font(.caption).textSelection(.enabled)
             }
         }.padding(12)
+            .onChange(of: explorer.selectionRevision) { searchFocused = true }
     }
 }

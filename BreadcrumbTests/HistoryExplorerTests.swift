@@ -63,3 +63,29 @@ struct HistoryExplorerTests {
         explorer.stop()
     }
 }
+
+extension HistoryExplorerTests {
+    @Test func drillDownSelectsExactNodeAndDoesNotRebuildWholePeriodReports() async {
+        var reports = 0
+        let explorer = HistoryExplorer(
+            page: { _, _, _ in JourneyPage(rows: [], nextCursor: nil) },
+            report: { _ in
+                reports += 1
+                return Report()
+            })
+        explorer.refresh()
+        let period = explorer.periods
+        explorer.filter = HistoryFilter(text: "conflict", kind: .sites)
+        explorer.select(
+            RankedItem(key: "app:exact.a", name: "Same", bundleID: "exact.a", visits: 1, total: 60),
+            kind: .apps)
+        #expect(explorer.filter.text.isEmpty)
+        #expect(explorer.filter.kind == .apps)
+        #expect(explorer.filter.nodeKey == "app:exact.a")
+        #expect(explorer.periods == period)
+        #expect(reports == 1)
+        explorer.clearFilters()
+        #expect(!explorer.filter.isActive)
+        explorer.stop()
+    }
+}

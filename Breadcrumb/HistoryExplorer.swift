@@ -9,6 +9,7 @@ final class HistoryExplorer {
     var customEnd = Date.now
     var filter = HistoryFilter()
     var sort: ReportSort = .visits
+    private(set) var selectionRevision = 0
     var showAllApps = false
     var showAllSites = false
     var comparisonEnabled = false
@@ -96,6 +97,12 @@ final class HistoryExplorer {
     }
 
     func retryJourney() { requestPage(append: !rows.isEmpty) }
+
+    func select(_ item: RankedItem, kind: HistoryKindFilter) {
+        filter = HistoryFilter(text: "", kind: kind, nodeKey: item.key)
+        selectionRevision += 1
+        reloadJourney()
+    }
 
     func clearFilters() {
         filter = HistoryFilter()

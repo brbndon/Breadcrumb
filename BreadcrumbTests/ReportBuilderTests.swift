@@ -96,3 +96,27 @@ extension ReportBuilderTests {
         #expect(report.activeMinutes == 0)
     }
 }
+
+extension ReportBuilderTests {
+    @Test func rankingsRetainMoreThanSixAppsAndSites() {
+        let apps = (0..<9).map { event("App \($0)", at: Double($0) * 60) }
+        let sites = (0..<9).map { index in
+            EventSample(
+                id: UUID(), timestamp: base.addingTimeInterval(600 + Double(index) * 60), kind: .site,
+                displayName: "site\(index).example", bundleID: "browser", host: "site\(index).example")
+        }
+        let report = ReportBuilder.build(events: apps + sites)
+        #expect(report.topApps.count == 9)
+        #expect(report.topSites.count == 9)
+    }
+    @Test func rankingSortsUseDeterministicNameAndNodeTies() {
+        let items = [
+            RankedItem(key: "app:b", name: "Same", bundleID: "b", visits: 2, total: 10),
+            RankedItem(key: "app:a", name: "Same", bundleID: "a", visits: 2, total: 10),
+            RankedItem(key: "app:c", name: "Other", bundleID: "c", visits: 1, total: 90),
+        ]
+        #expect(ReportBuilder.rankedItems(items, by: .visits).map(\.key) == ["app:a", "app:b", "app:c"])
+        #expect(
+            ReportBuilder.rankedItems(items, by: .estimatedTime).map(\.key) == ["app:c", "app:a", "app:b"])
+    }
+}

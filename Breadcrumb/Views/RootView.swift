@@ -75,7 +75,7 @@ private struct ExplorerContent: View {
                         Button("Retry Report") { explorer.updateReports() }
                     }.padding()
                 } else {
-                    ReportView(report: explorer.report)
+                    ReportView(explorer: explorer)
                 }
             }.frame(minWidth: 300, maxHeight: .infinity)
         }

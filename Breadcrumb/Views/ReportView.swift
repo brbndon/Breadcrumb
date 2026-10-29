@@ -1,18 +1,35 @@
 import SwiftUI
 
 struct ReportView: View {
-    let report: Report
+    @Bindable var explorer: HistoryExplorer
+    private var report: Report { explorer.report }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
-                HStack(alignment: .top) {
-                    stat("Switches", "\(report.switches)")
-                    stat("Apps", "\(report.apps)")
-                    stat("Active", "\(report.activeMinutes)m")
+            VStack(alignment: .leading, spacing: 24) {
+                if explorer.filter.isActive {
+                    Text(
+                        "Report: whole selected period. Journey filters apply only to visits below the search field."
+                    )
+                    .font(.caption).foregroundStyle(.secondary)
                 }
-                section("Top apps", report.topApps, showIcon: true)
-                section("Top sites", report.topSites, showIcon: false)
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: 16) { statistics }
+                    VStack(alignment: .leading, spacing: 12) { statistics }
+                }
+                DisclosureGroup("About estimated time") {
+                    Text(
+                        "Each recorded visit contributes at most five minutes, capped from its original start before clipping to this period. The newest ongoing visit contributes zero until its duration can be resolved. This is an estimate, not measured productive time."
+                    )
+                    Text(
+                        "Recorded visit duration in the journey is uncapped and can include unattended time when idle pausing was disabled. Ongoing means its duration is unknown."
+                    )
+                }.font(.caption)
+                Picker("Sort apps and sites by", selection: $explorer.sort) {
+                    ForEach(ReportSort.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                section("Apps", report.topApps, kind: .apps, expanded: $explorer.showAllApps)
+                section("Sites", report.topSites, kind: .sites, expanded: $explorer.showAllSites)
                 transitions
             }
             .padding(.horizontal, 20)
@@ -22,43 +39,70 @@ struct ReportView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
+    @ViewBuilder private var statistics: some View {
+        stat("Switches", "\(report.switches)")
+        stat("Apps", "\(report.apps)")
+        stat("Estimated time", "\(report.activeMinutes)m")
+    }
+
     private func stat(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label.uppercased()).font(.system(.caption2, design: .monospaced)).foregroundStyle(.secondary)
             Text(value).font(.system(.title3, design: .monospaced, weight: .bold)).monospacedDigit()
         }
+        .fixedSize(horizontal: true, vertical: false)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
     }
 
-    private func section(_ title: String, _ items: [RankedItem], showIcon: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+    private func section(
+        _ title: String, _ items: [RankedItem], kind: HistoryKindFilter, expanded: Binding<Bool>
+    ) -> some View {
+        let sorted = ReportBuilder.rankedItems(items, by: explorer.sort)
+        let visible = expanded.wrappedValue ? sorted : Array(sorted.prefix(6))
+        return VStack(alignment: .leading, spacing: 8) {
             heading(title)
             if items.isEmpty { empty }
-            ForEach(items) { item in
-                HStack(spacing: 8) {
-                    if showIcon {
-                        Group {
-                            if let icon = AppIcon.image(for: item.bundleID) {
-                                Image(nsImage: icon).resizable()
-                            } else {
-                                Text(String(item.name.prefix(1))).font(.caption2)
+            ForEach(visible) { item in
+                Button {
+                    explorer.select(item, kind: kind)
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            if explorer.filter.nodeKey == item.key {
+                                Image(systemName: "checkmark").accessibilityHidden(true)
                             }
+                            Text(item.name).multilineTextAlignment(.leading)
                         }
-                        .frame(width: 20, height: 20)
-                        .accessibilityHidden(true)
+                        if kind == .apps, let bundle = item.bundleID {
+                            Text(bundle).foregroundStyle(.secondary).multilineTextAlignment(.leading)
+                        }
+                        Text(
+                            "\(item.visits) visits · \(DurationFormat.short(item.total)) estimated · avg \(DurationFormat.short(item.average))"
+                        )
+                        .foregroundStyle(.secondary).multilineTextAlignment(.leading).monospacedDigit()
                     }
-                    Text(item.name).lineLimit(1)
-                    Spacer()
-                    Text(
-                        "\(item.visits)× · \(DurationFormat.short(item.total)) · avg \(DurationFormat.short(item.average))"
-                    )
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(6)
+                    .background(
+                        Color.primary.opacity(explorer.filter.nodeKey == item.key ? 0.08 : 0),
+                        in: .rect(cornerRadius: 4))
                 }
+                .buttonStyle(.plain)
                 .font(.system(.caption, design: .monospaced))
-                .accessibilityElement(children: .combine)
+                .accessibilityLabel(
+                    "\(item.name), \(item.bundleID ?? item.key), \(item.visits) visits, \(DurationFormat.short(item.total)) estimated time"
+                )
+                .accessibilityHint("Show this entry’s visits in the journey")
+                .accessibilityAddTraits(explorer.filter.nodeKey == item.key ? .isSelected : [])
                 DottedDivider()
+            }
+            if items.count > 6 {
+                Button(
+                    expanded.wrappedValue
+                        ? "Show fewer \(title.lowercased())" : "Show all \(items.count) \(title.lowercased())"
+                ) {
+                    expanded.wrappedValue.toggle()
+                }
             }
         }
     }
@@ -67,12 +111,11 @@ struct ReportView: View {
         VStack(alignment: .leading, spacing: 8) {
             heading("Most-used transitions")
             if report.transitions.isEmpty { empty }
-            ForEach(report.transitions) { t in
-                HStack {
-                    Text("\(t.from) \(Text("→").foregroundStyle(BreadcrumbPalette.rose)) \(t.to)").lineLimit(
-                        1)
+            ForEach(report.transitions) { transition in
+                HStack(alignment: .top) {
+                    Text("\(transition.from) → \(transition.to)")
                     Spacer()
-                    Text("\(t.count)×").foregroundStyle(.secondary).monospacedDigit()
+                    Text("\(transition.count)×").foregroundStyle(.secondary).monospacedDigit()
                 }
                 .font(.system(.caption, design: .monospaced))
                 .accessibilityElement(children: .combine)
@@ -87,7 +130,7 @@ struct ReportView: View {
     }
 
     private var empty: some View {
-        Text("Nothing yet — keep moving around.").font(.system(.caption, design: .monospaced))
+        Text("No recorded history").font(.system(.caption, design: .monospaced))
             .foregroundStyle(.secondary)
     }
 }
