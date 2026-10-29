@@ -62,3 +62,28 @@ struct ReportComparisonTests {
         #expect(periods.previous?.lowerBound == date("2024-02-28T08:00:00Z"))
     }
 }
+
+extension ReportComparisonTests {
+    private func recorded(switches: Int, apps: Int, minutes: Int) -> Report {
+        Report(
+            switches: switches, apps: apps, activeMinutes: minutes,
+            topApps: [RankedItem(key: "app:a", name: "A", bundleID: "a", visits: 1, total: 0)])
+    }
+    @Test func differencesAreSignedAbsoluteValuesIncludingZeroBaseline() {
+        let comparison = ReportComparison(
+            current: recorded(switches: 5, apps: 1, minutes: 0),
+            previous: recorded(switches: 0, apps: 3, minutes: 0))
+        #expect(comparison.difference(\.switches) == 5)
+        #expect(comparison.difference(\.apps) == -2)
+        #expect(comparison.difference(\.activeMinutes) == 0)
+        #expect(ReportComparison.signed(5) == "+5")
+        #expect(ReportComparison.signed(-2) == "−2")
+        #expect(ReportComparison.signed(0) == "0")
+    }
+    @Test func missingHistoryMakesDeltaUnavailable() {
+        let recorded = recorded(switches: 1, apps: 1, minutes: 1)
+        #expect(ReportComparison(current: recorded, previous: Report()).difference(\.apps) == nil)
+        #expect(ReportComparison(current: Report(), previous: recorded).difference(\.apps) == nil)
+        #expect(ReportComparison(current: recorded, previous: nil).difference(\.apps) == nil)
+    }
+}

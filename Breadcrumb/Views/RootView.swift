@@ -60,9 +60,14 @@ private struct ExplorerContent: View {
 
     var body: some View {
         HSplitView {
-            RangeSidebar(selection: $explorer.range)
-                .frame(minWidth: 120, idealWidth: 140, maxWidth: 180)
-                .onChange(of: explorer.range) { explorer.refresh() }
+            VStack(alignment: .leading, spacing: 8) {
+                RangeSidebar(selection: $explorer.range)
+                if explorer.range == .custom { CustomDateControls(explorer: explorer) }
+                Button("Refresh history", systemImage: "arrow.clockwise") { explorer.refresh() }
+                    .padding(10)
+            }
+            .frame(minWidth: 160, idealWidth: 180, maxWidth: 240)
+            .onChange(of: explorer.range) { explorer.refresh() }
             VStack(spacing: 0) {
                 HistoryControls(explorer: explorer)
                 Divider()

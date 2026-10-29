@@ -30,3 +30,20 @@ struct HistoryControls: View {
             .onChange(of: explorer.selectionRevision) { searchFocused = true }
     }
 }
+
+struct CustomDateControls: View {
+    @Bindable var explorer: HistoryExplorer
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            DatePicker("From", selection: $explorer.customStart, in: ...Date.now, displayedComponents: .date)
+            DatePicker("Through", selection: $explorer.customEnd, in: ...Date.now, displayedComponents: .date)
+                .help("The end calendar date is included. Today ends at the captured as-of time.")
+            Button("Apply dates") { explorer.refresh() }
+            if let error = explorer.periodError {
+                Text(error).foregroundStyle(.secondary)
+                Text("Showing the last valid period.").font(.caption)
+            }
+        }.padding(10)
+    }
+}

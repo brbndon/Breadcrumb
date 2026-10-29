@@ -13,9 +13,17 @@ struct ReportView: View {
                     )
                     .font(.caption).foregroundStyle(.secondary)
                 }
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .top, spacing: 16) { statistics }
-                    VStack(alignment: .leading, spacing: 12) { statistics }
+                periodControls
+                if report.hasRecordedHistory {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .top, spacing: 16) { statistics }
+                        VStack(alignment: .leading, spacing: 12) { statistics }
+                    }
+                } else {
+                    Text("No recorded history").foregroundStyle(.secondary)
+                }
+                if explorer.comparisonEnabled && explorer.periods?.previous != nil {
+                    comparison
                 }
                 DisclosureGroup("About estimated time") {
                     Text(
@@ -37,6 +45,52 @@ struct ReportView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    @ViewBuilder private var periodControls: some View {
+        if let periods = explorer.periods {
+            Text("Current: \(periodLabel(periods.current))").font(.caption)
+            Text("As of \(periods.asOf.formatted(date: .abbreviated, time: .shortened))")
+                .font(.caption).foregroundStyle(.secondary)
+            Toggle("Compare preceding period", isOn: $explorer.comparisonEnabled)
+                .disabled(periods.previous == nil)
+                .onChange(of: explorer.comparisonEnabled) { explorer.updateReports() }
+            if periods.previous == nil {
+                Text("Comparison is unavailable for All history.").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder private var comparison: some View {
+        if let previous = explorer.periods?.previous {
+            let delta = ReportComparison(current: report, previous: explorer.previousReport)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Previous: \(periodLabel(previous))")
+                Text("As of \(previous.upperBound.formatted(date: .abbreviated, time: .shortened))")
+                    .foregroundStyle(.secondary)
+                if let baseline = explorer.previousReport, baseline.hasRecordedHistory {
+                    Text(
+                        "\(baseline.switches) switches · \(baseline.apps) apps · \(baseline.activeMinutes)m estimated"
+                    )
+                } else {
+                    Text("No recorded history")
+                }
+                comparisonRow("Switches", delta.difference(\.switches))
+                comparisonRow("Apps", delta.difference(\.apps))
+                comparisonRow("Estimated minutes", delta.difference(\.activeMinutes))
+            }.font(.caption)
+        }
+    }
+
+    private func comparisonRow(_ name: String, _ difference: Int?) -> some View {
+        Text("\(name): \(difference.map(ReportComparison.signed) ?? "change unavailable")")
+    }
+
+    private func periodLabel(_ interval: Range<Date>) -> String {
+        let end = max(interval.lowerBound, interval.upperBound.addingTimeInterval(-0.001))
+        let dates =
+            "\(interval.lowerBound.formatted(date: .abbreviated, time: .omitted)) – \(end.formatted(date: .abbreviated, time: .omitted))"
+        return dates + " (until " + interval.upperBound.formatted(date: .abbreviated, time: .shortened) + ")"
     }
 
     @ViewBuilder private var statistics: some View {
