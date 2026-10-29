@@ -23,6 +23,24 @@ struct SettingsView: View {
                 .foregroundStyle(.secondary)
             }
 
+            Section("Launch at login") {
+                Toggle(
+                    "Launch at login",
+                    isOn: Binding(
+                        get: { runtime.login.isRequested }, set: { runtime.login.setEnabled($0) })
+                )
+                .disabled(runtime.login.isChanging || runtime.login.status == .unavailable)
+                Text(runtime.login.status.description).foregroundStyle(.secondary)
+                if runtime.login.isIsolated { Text("Demo: login settings are simulated.").font(.caption) }
+                if runtime.login.status == .requiresApproval || runtime.login.errorMessage != nil {
+                    Button("Open Login Items Settings") { runtime.login.openSettings() }
+                }
+                if let message = runtime.login.errorMessage {
+                    Text(message)
+                    Button("Refresh Login Status") { runtime.login.refresh() }
+                }
+            }
+
             Section("Tracking") {
                 Toggle("Pause tracking", isOn: $preferences.isPaused)
                     .disabled(!preferences.hasConsent || runtime.tracker == nil)
@@ -79,6 +97,7 @@ struct SettingsView: View {
                     .disabled(runtime.store == nil)
             }
         }
+        .onAppear { runtime.login.refresh() }
         .formStyle(.grouped)
         .frame(width: 600, height: 640)
         .confirmationDialog("Delete all recorded history?", isPresented: $confirmingDelete) {

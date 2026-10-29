@@ -8,21 +8,28 @@ import UniformTypeIdentifiers
 final class AppRuntime {
     let preferences: TrackingPreferences
     let presence: AppPresence
+    let login: LoginItemController
     private(set) var store: UsageStore?
     private(set) var tracker: FrontmostAppTracker?
     private(set) var storageError: String?
     var operationMessage: String?
+    var requestInitialWindow = false
     private(set) var messageBelongsToMainWindow = false
     private let automaticCapture: Bool
     private let openStore: () throws -> UsageStore
 
     init(
         preferences: TrackingPreferences = TrackingPreferences(),
-        presence: AppPresence = AppPresence(), automaticCapture: Bool = true,
+        presence: AppPresence = AppPresence(), login: LoginItemController? = nil,
+        automaticCapture: Bool = true,
         openStore: @escaping () throws -> UsageStore = { try UsageStore.open() }
     ) {
         self.preferences = preferences
         self.presence = presence
+        self.login =
+            login
+            ?? LoginItemController(
+                service: automaticCapture ? SystemLoginItemService() : IsolatedLoginItemService())
         self.automaticCapture = automaticCapture
         self.openStore = openStore
         load()
@@ -44,7 +51,10 @@ final class AppRuntime {
     }
 
     func start() { if automaticCapture { tracker?.start() } }
-    func stop() { tracker?.stop() }
+    func stop() {
+        tracker?.stop()
+        login.stop()
+    }
 
     func notify(_ message: String, inMainWindow: Bool = false) {
         messageBelongsToMainWindow = inMainWindow
