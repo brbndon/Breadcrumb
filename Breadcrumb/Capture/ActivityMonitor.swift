@@ -9,6 +9,7 @@ struct ActivitySnapshot: Equatable, Sendable {
     let timestamp: Date
     let idleSeconds: TimeInterval?
     let session: SessionActivity
+    var media: MediaActivity? = nil
 }
 
 @MainActor
@@ -20,6 +21,9 @@ protocol ActivityProviding {
 /// sometimes found in this dictionary is undocumented and deliberately unused.
 @MainActor
 struct SystemActivityProvider: ActivityProviding {
+    var mediaProvider: (any MediaActivityProviding)? = nil
+    /// Assertions are read only while idle pausing needs them.
+    var mediaEnabled: @MainActor () -> Bool = { true }
     func snapshot(at date: Date) -> ActivitySnapshot {
         let dictionary = CGSessionCopyCurrentDictionary() as? [String: Any]
         let session: SessionActivity
@@ -33,7 +37,8 @@ struct SystemActivityProvider: ActivityProviding {
         let idle = CGEventSource.secondsSinceLastEventType(
             .combinedSessionState, eventType: CGEventType(rawValue: UInt32.max)!)
         return ActivitySnapshot(
-            timestamp: date, idleSeconds: idle.isFinite && idle >= 0 ? idle : nil, session: session)
+            timestamp: date, idleSeconds: idle.isFinite && idle >= 0 ? idle : nil, session: session,
+            media: mediaEnabled() ? mediaProvider?.activity() : nil)
     }
 }
 
@@ -116,7 +121,7 @@ final class ActivityMonitor {
         onSample?(
             ActivitySnapshot(
                 timestamp: snapshot.timestamp, idleSeconds: snapshot.idleSeconds,
-                session: inactiveSession ? .inactive : snapshot.session))
+                session: inactiveSession ? .inactive : snapshot.session, media: snapshot.media))
     }
     func stop() {
         guard isRunning else { return }

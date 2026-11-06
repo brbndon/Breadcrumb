@@ -120,3 +120,17 @@ extension ActivityMonitorTests {
         #expect(event.endedAt == start.addingTimeInterval(60))
     }
 }
+
+extension ActivityMonitorTests {
+    @Test func idleThresholdPersistsAndRejectsInvalidStoredValues() throws {
+        let suite = "BreadcrumbThresholdTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(7, forKey: "idleThresholdMinutes")
+        let preferences = TrackingPreferences(defaults: defaults)
+        #expect(preferences.idleThresholdMinutes == 5)
+        preferences.idleThresholdMinutes = 30
+        #expect(TrackingPreferences(defaults: defaults).idleThresholdMinutes == 30)
+        #expect(!preferences.pauseWhenIdle)
+    }
+}

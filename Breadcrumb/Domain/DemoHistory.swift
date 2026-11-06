@@ -27,7 +27,8 @@ enum DemoHistory {
                     EventSample(
                         id: UUID(), timestamp: stamp, kind: site ? .site : .app,
                         displayName: offset == 0 && index == 0 ? "Deep archive match" : site ? host : name,
-                        bundleID: "demo.bundle.\(node)", host: site ? host : nil,
+                        bundleID: site || node == 2 ? "company.thebrowser.Browser" : "demo.bundle.\(node)",
+                        host: site ? host : nil,
                         endedAt: index % 45 == 0 ? stamp.addingTimeInterval(3) : nil))
             }
         }
@@ -41,6 +42,11 @@ enum DemoHistory {
                 id: UUID(), timestamp: today.addingTimeInterval(-7200), kind: .app,
                 displayName: "Long recorded visit", bundleID: "demo.long", host: nil,
                 endedAt: today.addingTimeInterval(-1800)))
+        events.append(
+            EventSample(
+                id: UUID(), timestamp: today.addingTimeInterval(-14400), kind: .site,
+                displayName: "youtube.com", bundleID: "company.thebrowser.Browser", host: "youtube.com",
+                endedAt: today.addingTimeInterval(-9000)))
         try store.importSamples(events)
         try store.append(
             EventSample(

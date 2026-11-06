@@ -22,6 +22,13 @@ final class TrackingPreferences {
             onChange?()
         }
     }
+    var idleThresholdMinutes: Int {
+        didSet {
+            if ![5, 15, 30, 60].contains(idleThresholdMinutes) { idleThresholdMinutes = 5 }
+            defaults?.set(idleThresholdMinutes, forKey: "idleThresholdMinutes")
+            onChange?()
+        }
+    }
     var excludedBundleIDs: [String] {
         didSet {
             defaults?.set(excludedBundleIDs, forKey: "excludedBundleIDs")
@@ -42,6 +49,8 @@ final class TrackingPreferences {
         hasConsent = defaults?.bool(forKey: "privacyExplained") ?? false
         isPaused = defaults?.bool(forKey: "trackingPaused") ?? false
         pauseWhenIdle = defaults?.bool(forKey: "pauseWhenIdle") ?? false
+        let threshold = defaults?.integer(forKey: "idleThresholdMinutes") ?? 5
+        idleThresholdMinutes = [5, 15, 30, 60].contains(threshold) ? threshold : 5
         excludedBundleIDs = defaults?.stringArray(forKey: "excludedBundleIDs") ?? []
         enabledBrowserIDs = defaults?.stringArray(forKey: "enabledBrowserIDs") ?? []
     }

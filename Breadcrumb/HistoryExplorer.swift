@@ -161,8 +161,10 @@ final class HistoryExplorer {
 
     func retryJourney() { requestPage(append: !rows.isEmpty) }
 
-    func select(_ item: RankedItem, kind: HistoryKindFilter) {
-        filter = HistoryFilter(text: "", kind: kind, nodeKey: item.key)
+    func select(_ item: RankedItem, kind: HistoryKindFilter, screenTime: Bool = false) {
+        filter = HistoryFilter(
+            text: "", kind: kind, nodeKey: item.key, includesBrowserSites: screenTime && kind == .apps,
+            normalizesSites: screenTime && kind == .sites)
         selectedName = item.name
         selectionRevision += 1
         reloadJourney()

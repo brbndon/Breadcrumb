@@ -312,3 +312,15 @@ extension HistoryExplorerTests {
         explorer.stop()
     }
 }
+
+extension HistoryExplorerTests {
+    @Test func dashboardRollupsUseExplicitFilterFlagsAndHistoryRemainsExact() {
+        let site = EventSample(
+            id: UUID(), timestamp: .now, kind: .site, displayName: "www.example.com", bundleID: "browser",
+            host: "www.example.com")
+        #expect(!HistoryFilter(kind: .apps, nodeKey: "app:browser").matches(site))
+        #expect(HistoryFilter(kind: .apps, nodeKey: "app:browser", includesBrowserSites: true).matches(site))
+        #expect(!HistoryFilter(kind: .sites, nodeKey: "site:example.com").matches(site))
+        #expect(HistoryFilter(kind: .sites, nodeKey: "site:example.com", normalizesSites: true).matches(site))
+    }
+}

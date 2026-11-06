@@ -13,10 +13,10 @@ struct PrivacyIntroduction: View {
                 "History is stored in Breadcrumb/Breadcrumb.store inside this app’s Application Support folder. There is no account, upload, or analytics."
             )
             Text(
-                "Arc and Dia integrations are off by default. Enable either in Settings to request Automation permission and record only website hosts. Full URLs and page titles are never stored."
+                "Arc, Dia, and Helium integrations are off by default. Enable a browser in Settings to request Automation permission and record only website hosts. Full URLs and page titles are never stored."
             )
             Text(
-                "Pause, exclude apps, export, or delete history in Settings. Pauses, exclusions, sleep, and console-session inactivity end the current tracking segment. Optional idle pausing uses only aggregate time since input, never keys, mouse positions, or input contents. Actual screen-lock detection is unavailable. Estimated time is capped at five minutes per visit. The newest ongoing visit contributes zero until its duration is known. Recorded visit duration is uncapped and can include unattended time."
+                "Pause, exclude apps, export, or delete history in Settings. Pauses, exclusions, sleep, and console-session inactivity end the current tracking segment. Optional idle pausing uses aggregate time since input and coarse foreground-app display-sleep assertions to retain media time, never keys, mouse positions, input contents, or audio content. Actual screen-lock detection is unavailable. Estimated time is capped at five minutes per visit. History’s newest ongoing visit contributes zero to Estimated time until its duration is known. Dashboard Screen time includes it through the last refresh. Recorded visit duration is uncapped and can include unattended time."
             )
             HStack {
                 Button("Start Tracking") {

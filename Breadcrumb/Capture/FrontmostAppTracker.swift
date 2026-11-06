@@ -38,6 +38,19 @@ final class FrontmostAppTracker {
     private var sleeping: Bool { systemSleeping || displaySleeping }
     private let requiresActivity: Bool
     private var activity: ActivitySnapshot?
+    private var lastMediaObserved: Date?
+    private var mediaIdentity: String?
+    private var mediaIsPlaying: Bool {
+        guard let media = activity?.media, media.isPlaying else { return false }
+        return media.appIdentity == currentApp()?.identity
+    }
+    private var idleThreshold: TimeInterval { Double(preferences.idleThresholdMinutes) * 60 }
+    private var effectiveIdle: TimeInterval? {
+        guard let activity, let idle = activity.idleSeconds, idle.isFinite, idle >= 0 else { return nil }
+        let input = activity.timestamp.addingTimeInterval(-idle)
+        let media = mediaIdentity == currentApp()?.identity ? lastMediaObserved : nil
+        return max(0, activity.timestamp.timeIntervalSince(max(input, media ?? input)))
+    }
     private var resumeNotBefore: Date?
     private var clockBlocked = false
     private var earliestCaptureDate: Date {
@@ -58,10 +71,13 @@ final class FrontmostAppTracker {
             return "Tracking is paused until the clock catches up with the last visit boundary."
         }
         if preferences.pauseWhenIdle {
-            guard let idle = activity.idleSeconds, idle.isFinite, idle >= 0 else {
+            guard let idle = effectiveIdle else {
                 return "Idle activity is unavailable. Tracking is paused; retry the activity check."
             }
-            if idle >= 300 { return "Tracking is paused after five minutes without input." }
+            if !mediaIsPlaying && idle >= idleThreshold {
+                return
+                    "Tracking is paused after \(preferences.idleThresholdMinutes) minutes without input or observed media activity."
+            }
         }
         return nil
     }
@@ -178,6 +194,8 @@ final class FrontmostAppTracker {
         do {
             try store.close(id: currentEvent.id, at: boundary)
             self.currentEvent = nil
+            lastMediaObserved = nil
+            mediaIdentity = nil
             resumeNotBefore = max(resumeNotBefore ?? boundary, boundary)
             pendingBoundary = nil
         } catch {
@@ -191,13 +209,19 @@ final class FrontmostAppTracker {
         if snapshot.timestamp.timeIntervalSince1970.isFinite {
             clockBlocked = snapshot.timestamp < earliestCaptureDate
             activity = snapshot
+            if snapshot.session == .active, snapshot.media?.isPlaying == true,
+                snapshot.media?.appIdentity == currentApp()?.identity
+            {
+                lastMediaObserved = snapshot.timestamp
+                mediaIdentity = snapshot.media?.appIdentity
+            }
         } else {
             activity = ActivitySnapshot(timestamp: clock(), idleSeconds: nil, session: .unknown)
         }
         if !activityAllowsCapture {
             var boundary = activity?.timestamp ?? clock()
             if snapshot.session == .active, preferences.pauseWhenIdle,
-                let idle = snapshot.idleSeconds, idle.isFinite, idle >= 300
+                let idle = effectiveIdle, idle >= idleThreshold
             {
                 boundary = snapshot.timestamp.addingTimeInterval(-idle)
                 boundary = min(snapshot.timestamp, max(currentEvent?.timestamp ?? boundary, boundary))
@@ -239,6 +263,12 @@ final class FrontmostAppTracker {
     private func persist(_ sample: EventSample) {
         do {
             try store.append(sample)
+            if (currentEvent?.bundleID ?? currentEvent?.displayName)
+                != (sample.bundleID ?? sample.displayName)
+            {
+                lastMediaObserved = nil
+                mediaIdentity = nil
+            }
             currentEvent = sample
             errorMessage = nil
         } catch {
@@ -280,7 +310,7 @@ final class FrontmostAppTracker {
                         id: UUID(), timestamp: timestamp, kind: .site,
                         displayName: host, bundleID: id, host: host)
                     if self.currentEvent?.nodeKey != sample.nodeKey { self.persist(sample) }
-                case .noPage:
+                case .noPage, .privateWindow:
                     self.browserMessage = nil
                     self.recordBrowserFallback(app, at: timestamp)
                 case .unavailable:

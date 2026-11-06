@@ -49,6 +49,32 @@ final class HistoryQueryService {
         return accumulator.report()
     }
 
+    func screenTime(in interval: Range<Date>, asOf: Date, calendar: Calendar = .current) async throws
+        -> ScreenTimeSummary
+    {
+        let revision = store.revision
+        var accumulator = ScreenTimeBuilder.Accumulator(interval: interval, asOf: asOf, calendar: calendar)
+        if let predecessor = try store.neighbor(of: interval.lowerBound, before: true) {
+            accumulator.append(predecessor)
+        }
+        var after: Date?
+        while true {
+            try Task.checkCancellation()
+            guard revision == store.revision else { throw CancellationError() }
+            let events = try batch(in: interval, boundary: after, ascending: true)
+            guard !events.isEmpty else { break }
+            for event in events { accumulator.append(event) }
+            after = events.last?.timestamp
+            await Task.yield()
+        }
+        if let successor = try store.neighbor(of: interval.upperBound, before: false) {
+            accumulator.append(successor)
+        }
+        try Task.checkCancellation()
+        guard revision == store.revision else { throw CancellationError() }
+        return accumulator.summary()
+    }
+
     /// A SQL-limited fetch avoids enumerate() preparing identifiers for an entire
     /// period before its first callback. Complete only the final timestamp bucket.
     private func batch(in interval: Range<Date>, boundary: Date?, ascending: Bool) throws -> [EventSample] {

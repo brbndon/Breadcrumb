@@ -4,6 +4,8 @@ import SwiftUI
 struct RootView: View {
     @Environment(AppRuntime.self) private var runtime
     @State private var explorer: HistoryExplorer?
+    @State private var dashboard: DashboardModel?
+    @State private var showsHistory = false
     private let refresh = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -24,7 +26,18 @@ struct RootView: View {
                 PrivacyIntroduction()
             } else {
                 if let explorer {
-                    ExplorerContent(explorer: explorer)
+                    if showsHistory {
+                        ExplorerContent(explorer: explorer)
+                    } else if let dashboard {
+                        DashboardView(model: dashboard) { row, kind in
+                            dashboard.configureHistory(explorer)
+                            explorer.select(
+                                RankedItem(
+                                    key: row.id, name: row.name, bundleID: row.bundleID, visits: 0,
+                                    total: row.seconds), kind: kind, screenTime: true)
+                            showsHistory = true
+                        }
+                    }
                 } else {
                     ProgressView("Loading history")
                 }
@@ -34,19 +47,39 @@ struct RootView: View {
         .font(.system(.body, design: .monospaced))
         .background(PaperCanvas())
         .tint(BreadcrumbPalette.rose)
+        .toolbar {
+            if runtime.preferences.hasConsent {
+                ToolbarItem {
+                    Picker("Screen", selection: $showsHistory) {
+                        Text("Dashboard").tag(false)
+                        Text("History").tag(true)
+                    }.pickerStyle(.segmented)
+                }
+            }
+        }
         .task(id: runtime.store.map(ObjectIdentifier.init)) {
             explorer?.stop()
+            dashboard?.stop()
             if let store = runtime.store {
                 let owner = HistoryExplorer(store: store)
                 explorer = owner
+                dashboard = DashboardModel(store: store)
+                dashboard?.storeChanged(revision: store.revision)
                 owner.storeChanged(revision: store.revision)
             }
         }
         .onChange(of: runtime.store?.revision) {
             explorer?.storeChanged(revision: runtime.store?.revision ?? 0)
+            dashboard?.storeChanged(revision: runtime.store?.revision ?? 0)
         }
-        .onReceive(refresh) { explorer?.dayChanged(now: $0) }
-        .onDisappear { explorer?.stop() }
+        .onReceive(refresh) {
+            explorer?.dayChanged(now: $0)
+            dashboard?.dayChanged(now: $0)
+        }
+        .onDisappear {
+            explorer?.stop()
+            dashboard?.stop()
+        }
         .alert(
             "Breadcrumb",
             isPresented: Binding(

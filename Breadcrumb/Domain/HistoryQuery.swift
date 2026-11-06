@@ -15,14 +15,22 @@ struct HistoryFilter: Equatable, Sendable {
     var text = ""
     var kind: HistoryKindFilter = .all
     var nodeKey: String?
+    // Dashboard rollups opt in; existing History selections keep exact original identities.
+    var includesBrowserSites = false
+    var normalizesSites = false
     var isActive: Bool {
         !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || kind != .all || nodeKey != nil
     }
 
     func matches(_ event: EventSample) -> Bool {
         guard
-            kind == .all || (kind == .apps && event.kind == .app) || (kind == .sites && event.kind == .site),
+            kind == .all || (kind == .apps && (event.kind == .app || includesBrowserSites))
+                || (kind == .sites && event.kind == .site),
             nodeKey == nil || nodeKey == event.nodeKey
+                || (includesBrowserSites && kind == .apps
+                    && nodeKey == "app:\(event.bundleID ?? event.displayName)")
+                || (normalizesSites && kind == .sites
+                    && nodeKey == "site:\(ScreenTimeBuilder.normalizedHost(event.host ?? event.displayName))")
         else { return false }
         let term = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return term.isEmpty || event.displayName.localizedStandardContains(term)

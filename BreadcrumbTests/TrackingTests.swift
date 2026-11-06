@@ -405,3 +405,154 @@ extension TrackingTests {
         #expect(store.events.first?.endedAt == nil)
     }
 }
+
+extension BrowserTrackingTests {
+    @Test func privateWindowFallsBackWithoutSavingHost() async throws {
+        let store = RecordingStore()
+        let preferences = TrackingPreferences(defaults: nil)
+        preferences.hasConsent = true
+        preferences.enabledBrowserIDs = ["net.imput.helium"]
+        let tracker = FrontmostAppTracker(
+            store: store, preferences: preferences,
+            currentApp: { ForegroundApp(name: "Helium", bundleID: "net.imput.helium") },
+            browserReader: HostReaderStub(.privateWindow))
+        tracker.start()
+        defer { tracker.stop() }
+        for _ in 0..<100 where store.events.isEmpty { try await Task.sleep(for: .milliseconds(5)) }
+        #expect(store.events.count == 1)
+        #expect(store.events.first?.kind == .app)
+        #expect(store.events.first?.host == nil)
+        #expect(tracker.browserMessage == nil)
+    }
+    @Test func supportedTableAndHostParsing() {
+        #expect(
+            Set(BrowserHostReader.supported.keys) == [
+                "net.imput.helium", "company.thebrowser.Browser", "company.thebrowser.dia",
+            ])
+        #expect(BrowserHostReader.browsers["net.imput.helium"]?.flavor == .chromiumWithPrivateMode)
+        #expect(
+            BrowserHostReader.host(from: "https://user:secret@WWW.Example.com/path?q=private#fragment")
+                == "www.example.com")
+        #expect(BrowserHostReader.host(from: "file:///private/path") == nil)
+        #expect(BrowserHostReader.host(from: "about:blank") == nil)
+    }
+}
+
+extension TrackingTests {
+    @Test func mediaIdleUsesLastObservedMediaAndUnavailableFallsBackToInput() {
+        for signalAvailable in [true, false] {
+            let store = RecordingStore()
+            let preferences = TrackingPreferences(defaults: nil)
+            preferences.hasConsent = true
+            preferences.pauseWhenIdle = true
+            var now = base
+            let tracker = FrontmostAppTracker(
+                store: store, preferences: preferences,
+                currentApp: { app }, clock: { now }, requiresActivity: true)
+            tracker.updateActivity(activity(0))
+            tracker.start()
+            now = base.addingTimeInterval(600)
+            tracker.updateActivity(
+                ActivitySnapshot(
+                    timestamp: now, idleSeconds: 600, session: .active,
+                    media: signalAvailable ? MediaActivity(appIdentity: app.identity, isPlaying: true) : nil))
+            if signalAvailable {
+                #expect(store.events.first?.endedAt == nil)
+                now = base.addingTimeInterval(800)
+                tracker.updateActivity(
+                    ActivitySnapshot(
+                        timestamp: now, idleSeconds: 800, session: .active,
+                        media: MediaActivity(appIdentity: app.identity, isPlaying: false)))
+                #expect(store.events.first?.endedAt == nil)
+                now = base.addingTimeInterval(901)
+                tracker.updateActivity(ActivitySnapshot(timestamp: now, idleSeconds: 901, session: .active))
+                #expect(store.events.first?.endedAt == base.addingTimeInterval(600))
+            } else {
+                #expect(store.events.first?.endedAt == base)
+            }
+            tracker.stop()
+        }
+    }
+    @Test func anotherAppsMediaDoesNotExemptForegroundIdle() {
+        let store = RecordingStore()
+        let preferences = TrackingPreferences(defaults: nil)
+        preferences.hasConsent = true
+        preferences.pauseWhenIdle = true
+        let tracker = FrontmostAppTracker(
+            store: store, preferences: preferences,
+            currentApp: { app }, clock: { base }, requiresActivity: true)
+        tracker.updateActivity(activity(0))
+        tracker.start()
+        tracker.updateActivity(
+            ActivitySnapshot(
+                timestamp: base.addingTimeInterval(600), idleSeconds: 600, session: .active,
+                media: MediaActivity(appIdentity: "another.app", isPlaying: true)))
+        #expect(store.events.first?.endedAt == base)
+        tracker.stop()
+    }
+}
+
+extension BrowserTrackingTests {
+    @Test func zenRemainsAppOnlyEvenIfEnabledInPreferences() async throws {
+        let store = RecordingStore()
+        let preferences = TrackingPreferences(defaults: nil)
+        preferences.hasConsent = true
+        preferences.enabledBrowserIDs = ["app.zen-browser.zen"]
+        let reader = HostReaderStub()
+        let tracker = FrontmostAppTracker(
+            store: store, preferences: preferences,
+            currentApp: { ForegroundApp(name: "Zen", bundleID: "app.zen-browser.zen") }, browserReader: reader
+        )
+        tracker.start()
+        defer { tracker.stop() }
+        await Task.yield()
+        #expect(await reader.calls == 0)
+        #expect(store.events.first?.kind == .app)
+        #expect(store.events.first?.host == nil)
+        #expect(BrowserHostReader.supported["app.zen-browser.zen"] == nil)
+    }
+}
+
+extension TrackingTests {
+    @Test func configuredThresholdDelaysIdleCloseAndClosesAtLastInput() {
+        for minutes in [15, 30, 60] {
+            let store = RecordingStore()
+            let preferences = TrackingPreferences(defaults: nil)
+            preferences.hasConsent = true
+            preferences.pauseWhenIdle = true
+            preferences.idleThresholdMinutes = minutes
+            let seconds = Double(minutes) * 60
+            let tracker = FrontmostAppTracker(
+                store: store, preferences: preferences,
+                currentApp: { app }, clock: { base }, requiresActivity: true)
+            tracker.updateActivity(activity(0))
+            tracker.start()
+            tracker.updateActivity(activity(seconds - 1, idle: seconds - 1))
+            #expect(store.events.first?.endedAt == nil)
+            tracker.updateActivity(activity(seconds, idle: seconds))
+            #expect(store.events.first?.endedAt == base)
+            tracker.stop()
+        }
+    }
+    @Test func mediaHistoryDoesNotSurviveAnAppSwitch() {
+        let store = RecordingStore()
+        let preferences = TrackingPreferences(defaults: nil)
+        preferences.hasConsent = true
+        preferences.pauseWhenIdle = true
+        let tracker = FrontmostAppTracker(
+            store: store, preferences: preferences,
+            currentApp: { app }, clock: { base }, requiresActivity: true)
+        tracker.updateActivity(activity(0))
+        tracker.start()
+        tracker.updateActivity(
+            ActivitySnapshot(
+                timestamp: base.addingTimeInterval(500), idleSeconds: 500, session: .active,
+                media: MediaActivity(appIdentity: app.identity, isPlaying: true)))
+        tracker.record(ForegroundApp(name: "Other", bundleID: "other.app"), at: base.addingTimeInterval(510))
+        tracker.record(app, at: base.addingTimeInterval(520))
+        // Stale media at 500 would leave only 200 s of idle; a reset leaves 700 s since input.
+        tracker.updateActivity(activity(700, idle: 700))
+        #expect(store.events.last?.endedAt == base.addingTimeInterval(520))
+        tracker.stop()
+    }
+}

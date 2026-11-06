@@ -44,7 +44,11 @@ final class AppRuntime {
         self.activityMonitor =
             activityMonitor
             ?? ActivityMonitor(
-                provider: automaticCapture ? SystemActivityProvider() : IsolatedActivityProvider())
+                provider: automaticCapture
+                    ? SystemActivityProvider(
+                        mediaProvider: PowerAssertionMediaProvider(),
+                        mediaEnabled: { preferences.pauseWhenIdle })
+                    : IsolatedActivityProvider())
         self.appearanceDefaults = appearanceDefaults
         appearance =
             appearanceDefaults?.string(forKey: "appearance").flatMap(AppearanceSetting.init(rawValue:))

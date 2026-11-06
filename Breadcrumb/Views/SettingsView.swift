@@ -46,8 +46,12 @@ struct SettingsView: View {
                     .disabled(!preferences.hasConsent || runtime.tracker == nil)
                 Toggle("Pause when idle", isOn: $preferences.pauseWhenIdle)
                     .disabled(!preferences.hasConsent)
+                Picker("Idle threshold", selection: $preferences.idleThresholdMinutes) {
+                    ForEach([5, 15, 30, 60], id: \.self) { Text("\($0) minutes").tag($0) }
+                }
+                .disabled(!preferences.hasConsent || !preferences.pauseWhenIdle)
                 Text(
-                    "After five minutes without input, the visit ends at the inferred last input time. Passive reading can look idle. This setting is off by default."
+                    "Media display-sleep assertions keep the foreground visit active. Otherwise it ends at the last input or observed media time after the idle threshold. Passive reading can look idle. This setting is off by default."
                 )
                 .foregroundStyle(.secondary)
                 Text(
@@ -83,7 +87,10 @@ struct SettingsView: View {
 
             Section("Browser hosts — optional") {
                 Text(
-                    "Only hosts are kept, such as example.com. Enabling a browser requests macOS Automation access when that browser is foreground. Full URLs and titles are never saved."
+                    "Zen has no AppleScript support, so it records app-only time."
+                ).foregroundStyle(.secondary)
+                Text(
+                    "Only hosts are kept, such as example.com. Enabling a browser requests macOS Automation access when that browser is foreground. Full URLs and titles are never saved. Helium private windows record app-only time."
                 )
                 .foregroundStyle(.secondary)
                 ForEach(BrowserHostReader.supported.keys.sorted(), id: \.self) { id in

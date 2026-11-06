@@ -12,6 +12,7 @@
     <array>
         <string>company.thebrowser.Browser</string>
         <string>company.thebrowser.dia</string>
+        <string>net.imput.helium</string>
     </array>
 </dict>
 </plist>
