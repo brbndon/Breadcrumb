@@ -14,6 +14,8 @@ final class DashboardModel {
     private(set) var shown: (range: DateRange, periods: ResolvedPeriods)?
     private(set) var isLoading = false
     private(set) var error: String?
+    /// The summary on screen no longer matches the selection: a load is running or the last one failed.
+    var isStale: Bool { shown != nil && (isLoading || error != nil) }
     private var revision: Int?
     private var generation = 0
     private var task: Task<Void, Never>?

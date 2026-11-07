@@ -45,7 +45,7 @@ struct CrumbChart: View {
             CrumbChartDescriptor(
                 title: "Screen time by \(unit == .hour ? "hour" : "day")",
                 axis: unit == .hour ? "Hour" : "Day",
-                summary: accessibilitySummary, labels: slots.map(slotLabel),
+                summary: accessibilitySummary, labels: uniqued(slots.map(slotLabel)),
                 minutes: slots.map { $0.seconds / 60 }
             ))
     }
@@ -122,6 +122,8 @@ struct CrumbChart: View {
 
     // MARK: Labels
 
+    private var showsYear: Bool { ScreenTimeTimeline.spansYears(slots) }
+
     private var labelStride: Int {
         if unit == .hour { return 6 }
         if slots.count <= 7 { return 1 }
@@ -131,7 +133,8 @@ struct CrumbChart: View {
     private func axisLabel(_ slot: ScreenTimeSlot) -> String {
         if unit == .hour { return slot.id.formatted(.dateTime.hour()) }
         if slots.count <= 7 { return slot.id.formatted(.dateTime.weekday(.abbreviated)) }
-        return slot.id.formatted(.dateTime.month(.abbreviated).day())
+        let date = Date.FormatStyle.dateTime.month(.abbreviated).day()
+        return slot.id.formatted(showsYear ? date.year() : date)
     }
 
     private func slotLabel(_ slot: ScreenTimeSlot) -> String {
@@ -139,7 +142,17 @@ struct CrumbChart: View {
             return
                 "\(slot.id.formatted(.dateTime.hour().minute())) – \(slot.end.formatted(.dateTime.hour().minute()))"
         }
-        return slot.id.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+        let date = Date.FormatStyle.dateTime.weekday(.abbreviated).month(.abbreviated).day()
+        return slot.id.formatted(showsYear ? date.year() : date)
+    }
+
+    /// Repeated labels, such as the doubled hour when clocks fall back, get a count so each is distinct.
+    private func uniqued(_ labels: [String]) -> [String] {
+        var seen: [String: Int] = [:]
+        return labels.map { label in
+            seen[label, default: 0] += 1
+            return seen[label] == 1 ? label : "\(label) (\(seen[label] ?? 1))"
+        }
     }
 
     @ViewBuilder private var tooltip: some View {

@@ -40,6 +40,32 @@ struct DashboardModelTests {
         #expect(model.shown?.periods == model.periods)
         model.stop()
     }
+    @Test func failedLoadKeepsTheShownSummaryAndMarksItStale() async {
+        struct Failure: Error {}
+        var fails = false
+        let model = DashboardModel { _, _, _ in
+            if fails { throw Failure() }
+            return ScreenTimeSummary(totalSeconds: 5)
+        }
+        #expect(!model.isStale)
+        model.refresh()
+        await settle { !model.isLoading }
+        let shown = model.shown
+        #expect(shown?.range == .today)
+        #expect(!model.isStale)
+        fails = true
+        model.range = .week
+        model.refresh()
+        #expect(model.isStale)
+        await settle { !model.isLoading }
+        #expect(model.error != nil)
+        #expect(model.range == .week)
+        #expect(model.shown?.range == .today)
+        #expect(model.shown?.periods == shown?.periods)
+        #expect(model.summary.totalSeconds == 5)
+        #expect(model.isStale)
+        model.stop()
+    }
     @Test func stoppedOrSupersededResultsCannotPublish() async {
         var pending: [CheckedContinuation<ScreenTimeSummary, any Error>] = []
         let model = DashboardModel { _, _, _ in

@@ -38,7 +38,7 @@ struct DashboardView: View {
                         DottedDivider()
                         rankings
                     }
-                    .opacity(model.isLoading && model.shown != nil ? 0.55 : 1)
+                    .opacity(model.isStale ? 0.55 : 1)
                 }
                 footnotes
             }
@@ -90,16 +90,19 @@ struct DashboardView: View {
         }
     }
 
+    /// Titles the data on screen, so it never names a period whose load is pending or failed.
     private var periodTitle: String {
-        guard let periods = model.periods else { return model.range.rawValue }
-        if model.range == .all { return "All recorded history" }
-        let start = periods.current.lowerBound
-        let end = max(start, periods.current.upperBound.addingTimeInterval(-0.001))
-        let day = Date.FormatStyle.dateTime.weekday(.wide).month(.abbreviated).day()
-        if Calendar.current.isDate(start, inSameDayAs: end) {
-            return start.formatted(day)
+        guard let shown = model.shown else { return model.range.rawValue }
+        if shown.range == .all { return "All recorded history" }
+        let start = shown.periods.current.lowerBound
+        let end = max(start, shown.periods.current.upperBound.addingTimeInterval(-0.001))
+        let calendar = Calendar.current
+        if calendar.isDate(start, inSameDayAs: end) {
+            return start.formatted(.dateTime.weekday(.wide).month(.abbreviated).day())
         }
-        let short = Date.FormatStyle.dateTime.month(.abbreviated).day()
+        let sameYear = calendar.component(.year, from: start) == calendar.component(.year, from: end)
+        let short: Date.FormatStyle =
+            sameYear ? .dateTime.month(.abbreviated).day() : .dateTime.month(.abbreviated).day().year()
         return "\(start.formatted(short)) – \(end.formatted(short))"
     }
 
@@ -165,7 +168,7 @@ struct DashboardView: View {
     @ViewBuilder private func chart(_ slots: [ScreenTimeSlot]) -> some View {
         if !slots.isEmpty {
             let crumb = ScreenTimeTimeline.crumbValue(for: slots, unit: summary.bucketUnit)
-            let comparison = slots.contains { ($0.previousSeconds ?? 0) > 0 } ? comparisonName : nil
+            let comparison = ScreenTimeTimeline.hasComparison(slots) ? comparisonName : nil
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 18) {
                     Kicker(summary.bucketUnit == .hour ? "By hour" : "By day")

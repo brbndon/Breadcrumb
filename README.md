@@ -1,6 +1,6 @@
 # Breadcrumb
 
-A local macOS app-usage tracker built with SwiftUI and SwiftData. The default Dashboard shows uncapped Screen time, app totals with expandable website rows, normalized websites across browsers, activity buckets, and preceding-period changes. Select a row to open filtered History. History’s three-pane window shows date ranges, a chronological journey, and app/site visit and transition reports. A menu bar item opens the window and Settings and pauses tracking.
+A local macOS app-usage tracker built with SwiftUI and SwiftData. The default Dashboard shows uncapped Screen time, app totals with expandable website rows, normalized websites across browsers, a crumb chart of activity by hour or day, and preceding-period changes. Select a row to open filtered History. History’s three-pane window shows date ranges, a chronological journey, and app/site visit and transition reports. A menu bar item opens the window and Settings and pauses tracking.
 
 Requires macOS 26+, Xcode with Swift 6.2+, and XcodeGen (`brew install xcodegen`). The generated Xcode project is ignored; `project.yml` is the build configuration.
 
