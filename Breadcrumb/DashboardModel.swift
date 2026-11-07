@@ -10,6 +10,8 @@ final class DashboardModel {
     private(set) var periods: ResolvedPeriods?
     private(set) var summary = ScreenTimeSummary()
     private(set) var previous: ScreenTimeSummary?
+    /// Range and periods that produced `summary`; `periods` moves ahead while loading.
+    private(set) var shown: (range: DateRange, periods: ResolvedPeriods)?
     private(set) var isLoading = false
     private(set) var error: String?
     private var revision: Int?
@@ -30,10 +32,10 @@ final class DashboardModel {
             let periods = try range.resolve(
                 now: now, calendar: calendar, customStart: customStart, customEnd: customEnd)
             applied = (range, customStart, customEnd)
-            load(periods, calendar: calendar)
+            load(periods, range: range, calendar: calendar)
         } catch { self.error = error.localizedDescription }
     }
-    private func load(_ periods: ResolvedPeriods, calendar: Calendar) {
+    private func load(_ periods: ResolvedPeriods, range: DateRange, calendar: Calendar) {
         task?.cancel()
         generation += 1
         let token = generation
@@ -53,6 +55,7 @@ final class DashboardModel {
                 guard let self, token == self.generation else { return }
                 self.summary = summary
                 self.previous = previous
+                self.shown = (range, periods)
                 self.isLoading = false
             } catch {
                 guard let self, token == self.generation, !Task.isCancelled else { return }
@@ -70,7 +73,7 @@ final class DashboardModel {
             load(
                 try applied.0.resolve(
                     now: now, calendar: calendar, customStart: applied.1, customEnd: applied.2),
-                calendar: calendar)
+                range: applied.0, calendar: calendar)
         } catch { self.error = error.localizedDescription }
     }
     func storeChanged(revision: Int, now: Date = .now) {

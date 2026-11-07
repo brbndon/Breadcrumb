@@ -31,10 +31,13 @@ struct DashboardModelTests {
         model.refresh(now: now)
         #expect(model.periods == period)
         #expect(model.error != nil)
+        #expect(model.shown?.range == .today)
         model.range = .all
         model.refresh(now: now)
         await settle { !model.isLoading }
         #expect(model.previous == nil)
+        #expect(model.shown?.range == .all)
+        #expect(model.shown?.periods == model.periods)
         model.stop()
     }
     @Test func stoppedOrSupersededResultsCannotPublish() async {

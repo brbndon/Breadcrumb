@@ -109,11 +109,19 @@ private struct JourneyRowView: View {
     }
 }
 
+@MainActor
 enum AppIcon {
+    /// Found icons only; a missing app is looked up again in case it is installed later.
+    private static var cache: [String: NSImage] = [:]
+
     static func image(for bundleID: String?) -> NSImage? {
-        guard let bundleID,
-            let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
-        else { return nil }
-        return NSWorkspace.shared.icon(forFile: url.path)
+        guard let bundleID else { return nil }
+        if let icon = cache[bundleID] { return icon }
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+            return nil
+        }
+        let icon = NSWorkspace.shared.icon(forFile: url.path)
+        cache[bundleID] = icon
+        return icon
     }
 }
