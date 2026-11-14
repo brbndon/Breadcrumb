@@ -6,6 +6,11 @@ struct ForegroundApp: Equatable, Sendable {
     let bundleID: String?
     var identity: String { bundleID ?? name }
 
+    /// Processes that only host system alerts. They take focus when a dialog appears and keep it
+    /// while the dialog waits unanswered, so they are never visits.
+    static let systemDialogAgents: Set<String> = ["com.apple.UserNotificationCenter"]
+    var isSystemDialogAgent: Bool { bundleID.map(Self.systemDialogAgents.contains) ?? false }
+
     @MainActor static func current() -> ForegroundApp? {
         guard let app = NSWorkspace.shared.frontmostApplication, let name = app.localizedName else {
             return nil
@@ -50,6 +55,12 @@ final class FrontmostAppTracker {
         let input = activity.timestamp.addingTimeInterval(-idle)
         let media = mediaIdentity == currentApp()?.identity ? lastMediaObserved : nil
         return max(0, activity.timestamp.timeIntervalSince(max(input, media ?? input)))
+    }
+    /// Only meaningful while capture is allowed: with media absent, idle input past the threshold
+    /// would already have paused capture, so this is media time without input.
+    private var passiveNow: Bool {
+        guard preferences.pauseWhenIdle, let idle = activity?.idleSeconds, idle.isFinite else { return false }
+        return idle >= idleThreshold
     }
     private var resumeNotBefore: Date?
     private var clockBlocked = false
@@ -172,14 +183,15 @@ final class FrontmostAppTracker {
         guard pendingBoundary == nil, errorMessage == nil else { return }
         if date < earliestCaptureDate { clockBlocked = true }
         guard eligible(at: date),
-            let app, !preferences.excludedBundleIDs.contains(app.identity)
+            let app, !preferences.excludedBundleIDs.contains(app.identity), !app.isSystemDialogAgent
         else {
             endSegment(at: date)
             return
         }
         if let currentEvent, (currentEvent.bundleID ?? currentEvent.displayName) == app.identity { return }
         let sample = EventSample(
-            id: UUID(), timestamp: date, kind: .app, displayName: app.name, bundleID: app.bundleID, host: nil)
+            id: UUID(), timestamp: date, kind: .app, displayName: app.name, bundleID: app.bundleID, host: nil,
+            passive: passiveNow)
         persist(sample)
     }
 
@@ -229,7 +241,29 @@ final class FrontmostAppTracker {
             endSegment(at: boundary)
         } else if !wasAllowed {
             refresh()
+        } else {
+            reconcilePassive()
         }
+    }
+
+    /// Splits the visit where input stopped (or resumed) so media watched without input stays
+    /// recorded but is told apart from time spent at the keyboard.
+    private func reconcilePassive() {
+        guard let current = currentEvent, pendingBoundary == nil, errorMessage == nil, let activity,
+            current.passive != passiveNow
+        else { return }
+        let lastInput = activity.timestamp.addingTimeInterval(-(activity.idleSeconds ?? 0))
+        let boundary = min(activity.timestamp, max(current.timestamp, lastInput))
+        do {
+            try store.close(id: current.id, at: boundary)
+        } catch {
+            endSegment(at: boundary)
+            return
+        }
+        persist(
+            EventSample(
+                id: UUID(), timestamp: boundary, kind: current.kind, displayName: current.displayName,
+                bundleID: current.bundleID, host: current.host, passive: passiveNow))
     }
 
     func retry() {
@@ -308,7 +342,7 @@ final class FrontmostAppTracker {
                     self.browserMessage = nil
                     let sample = EventSample(
                         id: UUID(), timestamp: timestamp, kind: .site,
-                        displayName: host, bundleID: id, host: host)
+                        displayName: host, bundleID: id, host: host, passive: self.passiveNow)
                     if self.currentEvent?.nodeKey != sample.nodeKey { self.persist(sample) }
                 case .noPage, .privateWindow:
                     self.browserMessage = nil
@@ -326,7 +360,7 @@ final class FrontmostAppTracker {
     private func recordBrowserFallback(_ app: ForegroundApp, at date: Date) {
         let sample = EventSample(
             id: UUID(), timestamp: date, kind: .app,
-            displayName: app.name, bundleID: app.bundleID, host: nil)
+            displayName: app.name, bundleID: app.bundleID, host: nil, passive: passiveNow)
         if currentEvent?.nodeKey != sample.nodeKey { persist(sample) }
     }
 }

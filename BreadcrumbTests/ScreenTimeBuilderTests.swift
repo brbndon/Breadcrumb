@@ -119,4 +119,14 @@ struct ScreenTimeBuilderTests {
         try store.importSamples([event(9000, end: 9001)])
         await #expect(throws: CancellationError.self) { try await superseded.value }
     }
+    @Test func passiveSecondsAreSubsetsOfTotalPerAppAndSite() {
+        var passive = event(100, end: 400, host: "kick.com")
+        passive.passive = true
+        let result = build([event(0, end: 100, host: "kick.com"), passive], asOf: 500)
+        #expect(result.totalSeconds == 400)
+        #expect(result.passiveSeconds == 300)
+        #expect(result.sites.first?.passiveSeconds == 300)
+        #expect(result.apps.first?.passiveSeconds == 300)
+        #expect(result.apps.first?.sites.first?.passiveSeconds == 300)
+    }
 }

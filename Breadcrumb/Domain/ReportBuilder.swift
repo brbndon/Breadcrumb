@@ -83,7 +83,8 @@ enum ReportBuilder {
         }
 
         private mutating func addVisit(_ event: EventSample, next: EventSample?) {
-            guard interval?.isEmpty != true else { return }
+            // Passive media time is reported on the dashboard, not as estimated active time.
+            guard interval?.isEmpty != true, !event.passive else { return }
             let dwell = ReportBuilder.dwell(event, next: next)
             let end = event.timestamp.addingTimeInterval(dwell ?? 0)
             let startsInside = interval?.contains(event.timestamp) ?? true

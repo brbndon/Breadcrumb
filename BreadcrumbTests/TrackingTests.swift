@@ -457,16 +457,19 @@ extension TrackingTests {
                     timestamp: now, idleSeconds: 600, session: .active,
                     media: signalAvailable ? MediaActivity(appIdentity: app.identity, isPlaying: true) : nil))
             if signalAvailable {
-                #expect(store.events.first?.endedAt == nil)
+                #expect(store.events.count == 2)
+                #expect(store.events.last?.passive == true)
+                #expect(store.events.last?.endedAt == nil)
                 now = base.addingTimeInterval(800)
                 tracker.updateActivity(
                     ActivitySnapshot(
                         timestamp: now, idleSeconds: 800, session: .active,
                         media: MediaActivity(appIdentity: app.identity, isPlaying: false)))
-                #expect(store.events.first?.endedAt == nil)
+                #expect(store.events.count == 2)
+                #expect(store.events.last?.endedAt == nil)
                 now = base.addingTimeInterval(901)
                 tracker.updateActivity(ActivitySnapshot(timestamp: now, idleSeconds: 901, session: .active))
-                #expect(store.events.first?.endedAt == base.addingTimeInterval(600))
+                #expect(store.events.last?.endedAt == base.addingTimeInterval(600))
             } else {
                 #expect(store.events.first?.endedAt == base)
             }
@@ -554,5 +557,75 @@ extension TrackingTests {
         tracker.updateActivity(activity(700, idle: 700))
         #expect(store.events.last?.endedAt == base.addingTimeInterval(520))
         tracker.stop()
+    }
+}
+
+extension TrackingTests {
+    private func playing(_ time: Double, idle: Double) -> ActivitySnapshot {
+        ActivitySnapshot(
+            timestamp: base.addingTimeInterval(time), idleSeconds: idle, session: .active,
+            media: MediaActivity(appIdentity: app.identity, isPlaying: true))
+    }
+    @Test func mediaWithoutInputBecomesPassiveAndInputMakesItActiveAgain() {
+        let store = RecordingStore()
+        let preferences = TrackingPreferences(defaults: nil)
+        preferences.hasConsent = true
+        preferences.pauseWhenIdle = true
+        var now = base
+        let tracker = FrontmostAppTracker(
+            store: store, preferences: preferences, currentApp: { app }, clock: { now },
+            requiresActivity: true)
+        tracker.updateActivity(activity(0))
+        tracker.start()
+        defer { tracker.stop() }
+        now = base.addingTimeInterval(30)
+        tracker.updateActivity(playing(30, idle: 0))
+        #expect(store.events.count == 1)
+        // Last input at t=30; the threshold passes at t=330.
+        now = base.addingTimeInterval(400)
+        tracker.updateActivity(playing(400, idle: 370))
+        #expect(store.events.count == 2)
+        #expect(store.events[0].endedAt == base.addingTimeInterval(30))
+        #expect(store.events[1].passive)
+        #expect(store.events[1].timestamp == base.addingTimeInterval(30))
+        now = base.addingTimeInterval(3000)
+        tracker.updateActivity(playing(3000, idle: 2970))
+        #expect(store.events.count == 2)
+        now = base.addingTimeInterval(3601)
+        tracker.updateActivity(playing(3601, idle: 1))
+        #expect(store.events.count == 3)
+        #expect(store.events[1].endedAt == base.addingTimeInterval(3600))
+        #expect(!store.events[2].passive)
+        #expect(ReportBuilder.build(events: store.events).switches == 0)
+    }
+    @Test func passiveSplitIsOffWithoutIdlePausing() {
+        let store = RecordingStore()
+        let preferences = TrackingPreferences(defaults: nil)
+        preferences.hasConsent = true
+        var now = base
+        let tracker = FrontmostAppTracker(
+            store: store, preferences: preferences, currentApp: { app }, clock: { now },
+            requiresActivity: true)
+        tracker.updateActivity(activity(0))
+        tracker.start()
+        defer { tracker.stop() }
+        now = base.addingTimeInterval(4000)
+        tracker.updateActivity(playing(4000, idle: 4000))
+        #expect(store.events.count == 1)
+        #expect(!store.events[0].passive)
+    }
+    @Test func systemDialogAgentsAreNeverRecorded() {
+        let store = RecordingStore()
+        let preferences = TrackingPreferences(defaults: nil)
+        preferences.hasConsent = true
+        let tracker = FrontmostAppTracker(store: store, preferences: preferences)
+        let dialog = ForegroundApp(
+            name: "UserNotificationCenter", bundleID: "com.apple.UserNotificationCenter")
+        tracker.record(app, at: base)
+        tracker.record(dialog, at: base.addingTimeInterval(10))
+        #expect(store.events.count == 1)
+        #expect(store.events[0].endedAt == base.addingTimeInterval(10))
+        tracker.record(app, at: base.addingTimeInterval(20))
+        #expect(store.events.count == 2)
     }
 }

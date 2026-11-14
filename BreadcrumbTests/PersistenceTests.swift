@@ -92,6 +92,21 @@ struct PersistenceTests {
         #expect(throws: (any Error).self) { try HistoryTransfer.decode(Data("{}".utf8)) }
     }
 
+    @Test func passiveFlagSurvivesStoreAndArchiveAndOldArchivesDecodeAsActive() throws {
+        var event = sample()
+        event.passive = true
+        let store = try UsageStore.open(inMemory: true)
+        try store.append(event)
+        #expect(try store.context.fetch(FetchDescriptor<UsageEvent>()).map(\.sample) == [event])
+        #expect(try HistoryTransfer.decode(HistoryTransfer.encode([event])) == [event])
+        let legacy =
+            try JSONSerialization.jsonObject(with: HistoryTransfer.encode([sample()])) as! [String: Any]
+        var events = legacy["events"] as! [[String: Any]]
+        events[0].removeValue(forKey: "passive")
+        let data = try JSONSerialization.data(withJSONObject: ["version": 1, "events": events])
+        #expect(try HistoryTransfer.decode(data).map(\.passive) == [false])
+    }
+
     @Test func archiveRejectsHostOnAppEvent() throws {
         let event = EventSample(
             id: UUID(), timestamp: .now, kind: .app,

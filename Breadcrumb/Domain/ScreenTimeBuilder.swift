@@ -5,6 +5,8 @@ struct ScreenTimeRow: Identifiable, Equatable, Sendable {
     let name: String
     let bundleID: String?
     var seconds: TimeInterval = 0
+    /// Part of `seconds` spent with no input while media played.
+    var passiveSeconds: TimeInterval = 0
     var sites: [ScreenTimeRow] = []
 }
 
@@ -15,6 +17,7 @@ struct ScreenTimeBucket: Identifiable, Equatable, Sendable {
 
 struct ScreenTimeSummary: Equatable, Sendable {
     var totalSeconds: TimeInterval = 0
+    var passiveSeconds: TimeInterval = 0
     var apps: [ScreenTimeRow] = []
     var sites: [ScreenTimeRow] = []
     var buckets: [ScreenTimeBucket] = []
@@ -43,6 +46,7 @@ enum ScreenTimeBuilder {
         private var children: [String: [String: ScreenTimeRow]] = [:]
         private var buckets: [Date: TimeInterval] = [:]
         private var total: TimeInterval = 0
+        private var passiveTotal: TimeInterval = 0
 
         init(interval: Range<Date>, asOf: Date, calendar: Calendar = .current) {
             self.interval = interval
@@ -64,7 +68,7 @@ enum ScreenTimeBuilder {
                 return row
             }
             return ScreenTimeSummary(
-                totalSeconds: copy.total, apps: Self.ranked(apps),
+                totalSeconds: copy.total, passiveSeconds: copy.passiveTotal, apps: Self.ranked(apps),
                 sites: Self.ranked(Array(copy.sites.values)),
                 buckets: copy.buckets.map { ScreenTimeBucket(id: $0.key, seconds: $0.value) }.sorted {
                     $0.id < $1.id
@@ -88,6 +92,8 @@ enum ScreenTimeBuilder {
             guard end > start else { return }
             let seconds = end.timeIntervalSince(start)
             total += seconds
+            let passive = event.passive ? seconds : 0
+            passiveTotal += passive
             let appKey = "app:\(event.bundleID ?? event.displayName)"
             let appName =
                 event.kind == .app
@@ -95,16 +101,19 @@ enum ScreenTimeBuilder {
                 : event.bundleID.flatMap { BrowserHostReader.supported[$0] } ?? event.bundleID ?? "Browser"
             var app = apps[appKey] ?? ScreenTimeRow(id: appKey, name: appName, bundleID: event.bundleID)
             app.seconds += seconds
+            app.passiveSeconds += passive
             apps[appKey] = app
             if event.kind == .site {
                 let host = ScreenTimeBuilder.normalizedHost(event.host ?? event.displayName)
                 let key = "site:\(host)"
                 var site = sites[key] ?? ScreenTimeRow(id: key, name: host, bundleID: nil)
                 site.seconds += seconds
+                site.passiveSeconds += passive
                 sites[key] = site
                 var child =
                     children[appKey, default: [:]][key] ?? ScreenTimeRow(id: key, name: host, bundleID: nil)
                 child.seconds += seconds
+                child.passiveSeconds += passive
                 children[appKey, default: [:]][key] = child
             }
             let component = bucketComponent

@@ -54,7 +54,8 @@ final class UsageStore: EventWriting {
         try transaction {
             let event = UsageEvent(
                 id: sample.id, timestamp: sample.timestamp, kind: sample.kind,
-                displayName: sample.displayName, bundleID: sample.bundleID, host: sample.host)
+                displayName: sample.displayName, bundleID: sample.bundleID, host: sample.host,
+                passive: sample.passive)
             event.endedAt = sample.endedAt
             context.insert(event)
         }
@@ -83,7 +84,8 @@ final class UsageStore: EventWriting {
             for sample in samples where inserted.insert(sample.id).inserted {
                 let event = UsageEvent(
                     id: sample.id, timestamp: sample.timestamp, kind: sample.kind,
-                    displayName: sample.displayName, bundleID: sample.bundleID, host: sample.host)
+                    displayName: sample.displayName, bundleID: sample.bundleID, host: sample.host,
+                    passive: sample.passive)
                 // An imported open visit must not join a new tracking session.
                 event.endedAt = sample.endedAt ?? (sample.id == finalID ? sample.timestamp : nil)
                 context.insert(event)

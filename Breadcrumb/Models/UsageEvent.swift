@@ -16,6 +16,7 @@ final class UsageEvent {
     var bundleID: String?
     var host: String?
     var endedAt: Date?
+    var passive: Bool = false
 
     #Index<UsageEvent>([\.timestamp])
 
@@ -27,7 +28,8 @@ final class UsageEvent {
         kind: EventKind = .app,
         displayName: String,
         bundleID: String? = nil,
-        host: String? = nil
+        host: String? = nil,
+        passive: Bool = false
     ) {
         self.id = id
         self.timestamp = timestamp
@@ -35,11 +37,12 @@ final class UsageEvent {
         self.displayName = displayName
         self.bundleID = bundleID
         self.host = host
+        self.passive = passive
     }
 
     var sample: EventSample {
         EventSample(
             id: id, timestamp: timestamp, kind: kind, displayName: displayName, bundleID: bundleID,
-            host: host, endedAt: endedAt)
+            host: host, endedAt: endedAt, passive: passive)
     }
 }

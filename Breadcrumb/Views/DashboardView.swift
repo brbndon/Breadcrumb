@@ -111,6 +111,13 @@ struct DashboardView: View {
     private var hero: some View {
         VStack(alignment: .leading, spacing: 12) {
             HeroDuration(seconds: summary.totalSeconds)
+            if summary.passiveSeconds >= 60 {
+                Label(
+                    "\(DurationFormat.short(summary.passiveSeconds)) of this was media playing with no input",
+                    systemImage: "play.circle"
+                )
+                .font(.system(.callout, design: .monospaced)).foregroundStyle(.secondary)
+            }
             if let previous = model.previous, previous.totalSeconds > 0, summary.totalSeconds > 0,
                 let phrase = comparisonPhrase
             {
@@ -433,6 +440,10 @@ private struct RankRow: View {
                                 .frame(width: 40, alignment: .trailing)
                         }
                         ShareBar(fraction: top > 0 ? item.seconds / top : 0)
+                        if item.passiveSeconds >= 60 {
+                            Text("\(DurationFormat.short(item.passiveSeconds)) passive media")
+                                .font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
+                        }
                     }
                 }
                 .padding(.horizontal, 8).padding(.vertical, 7)
@@ -442,7 +453,7 @@ private struct RankRow: View {
             .buttonStyle(.plain)
             .onHover { hovering = $0 }
             .accessibilityLabel(
-                "\(item.name), \(DurationFormat.short(item.seconds)), \(share.formatted(.percent.precision(.fractionLength(0)))) of screen time"
+                "\(item.name), \(DurationFormat.short(item.seconds))\(item.passiveSeconds >= 60 ? ", \(DurationFormat.short(item.passiveSeconds)) passive media" : ""), \(share.formatted(.percent.precision(.fractionLength(0)))) of screen time"
             )
             .accessibilityHint("Show matching History visits")
             if !item.sites.isEmpty {

@@ -95,7 +95,8 @@ private struct JourneyRowView: View {
         let kind = row.event.kind == .app ? "APP" : "SITE"
         let duration = row.dwell.map(DurationFormat.short) ?? "Ongoing"
         let carried = row.isCarryIn ? " · Started before this period" : ""
-        return "\(kind) · Recorded visit duration: \(duration)\(carried)"
+        let passive = row.event.passive ? " · Passive media, no input" : ""
+        return "\(kind) · Recorded visit duration: \(duration)\(passive)\(carried)"
     }
 
     @ViewBuilder private var marker: some View {
